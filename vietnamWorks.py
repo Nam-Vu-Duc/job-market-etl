@@ -3,9 +3,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
@@ -17,59 +17,62 @@ chrome_options = Options()
 chrome_options.add_argument("start-maximized")
 chrome_options.add_argument("disable-blink-features=AutomationControlled")  # Hide Selenium
 
-#  = webdriver.Chrome(service=Service(), options=chrome_options)
-
 def get_job_list(driver) -> list[list[str]]:
+    driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
+
+    time.sleep(2)
+
     job_lists_container = WebDriverWait(driver, 20).until(
-        ec.presence_of_element_located((By.CLASS_NAME, 'job-list-search-result'))
+        ec.presence_of_element_located((By.CLASS_NAME, 'block-job-list'))
     )
 
-    job_lists = job_lists_container.find_elements(By.CLASS_NAME, 'job-item-search-result')
+    job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.sc-eEbqID.jZzXhN")
 
     data = []
     for job in job_lists:
         try:
-            position = job.find_element(By.CSS_SELECTOR, "h3.title a span").text.strip()
+            position = job.find_element(By.CSS_SELECTOR, "h2 a").text.strip()
         except NoSuchElementException:
             position = "Not Available"
 
         try:
-            company = job.find_element(By.CSS_SELECTOR, "a.company span").text.strip()
+            company = job.find_element(By.CSS_SELECTOR, "div.sc-cdaca-d.dVvIA a").text.strip()
         except NoSuchElementException:
             company = "Not Available"
 
         try:
-            salary = job.find_element(By.CSS_SELECTOR, "label.title-salary").text.strip()
+            salary = job.find_element(By.CSS_SELECTOR, "span.sc-fgSWkL.gKHoAZ").text.strip()
         except NoSuchElementException:
             salary = "Not Available"
 
         try:
-            address = job.find_element(By.CSS_SELECTOR, "label.address span").text.strip()
+            address = job.find_element(By.CSS_SELECTOR, "span.sc-kzkBiZ.hAkUGp").text.strip()
         except NoSuchElementException:
             address = "Not Available"
 
-        try:
-            exp = job.find_element(By.CSS_SELECTOR, "label.exp span").text.strip()
-        except NoSuchElementException:
-            exp = "Not Available"
-
-        data.append([position, company, salary, address, exp])
+        data.append([position, company, salary, address])
 
     return data
 
 def get_total_pages() -> int:
     driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    driver.get('https://www.topcv.vn/tim-viec-lam-data-engineer-tai-ha-noi-kl1?type_keyword=1&page=1&locations=l1&sba=1')
+    driver.get('https://www.vietnamworks.com/viec-lam?q=data-engineer&l=24&g=5&page=1')
 
-    pagination = WebDriverWait(driver, 20).until(
-        ec.presence_of_element_located((By.ID, 'job-listing-paginate-text'))
-    )
+    try:
+        pagination = WebDriverWait(driver, 10).until(
+            ec.presence_of_element_located((By.CLASS_NAME, 'pagination'))
+        )
+    except (TimeoutException, NoSuchElementException):
+        pagination = None
 
-    total_page = int(pagination.text.split()[2])
+    if pagination:
+        li_list = pagination.find_elements(By.CSS_SELECTOR, 'button')
+        total_page = int(li_list[-2].text)
+        return total_page
 
     driver.quit()
 
-    return total_page
+    return 1
 
 def get_all_jobs() -> list[list[str]]:
     data = []
@@ -77,7 +80,7 @@ def get_all_jobs() -> list[list[str]]:
 
     for i in range(1,total_page+1):
         driver = webdriver.Chrome(service=Service(), options=chrome_options)
-        driver.get(f'https://www.topcv.vn/tim-viec-lam-data-engineer-tai-ha-noi-kl1?type_keyword=1&page={i}&locations=l1&sba=1')
+        driver.get(f'https://www.vietnamworks.com/viec-lam?q=data-engineer&l=24&g=5&page={i}')
         data += get_job_list(driver)
         driver.quit()
 
@@ -85,6 +88,6 @@ def get_all_jobs() -> list[list[str]]:
 
 # if __name__ == '__main__':
 #     data = get_all_jobs()
-#
 #     data = pd.DataFrame(data)
-#     data.columns = ['Vị trí', 'Công ty', 'Mức lương', 'Địa chỉ', 'Kinh nghiệm']
+#     data.columns = ['Vị trí', 'Công ty', 'Mức lương', 'Địa chỉ']
+#     print(data)
