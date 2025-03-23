@@ -1,3 +1,4 @@
+from pandas import DataFrame
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
@@ -59,7 +60,7 @@ def get_job_list(driver) -> list[list[str]]:
 
 def get_total_pages() -> int:
     driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    driver.get('https://www.topcv.vn/tim-viec-lam-data-engineer-tai-ha-noi-kl1?type_keyword=1&page=1&locations=l1&sba=1')
+    driver.get('https://www.topcv.vn/tim-viec-lam-data-engineer?type_keyword=1&page=1')
 
     pagination = WebDriverWait(driver, 20).until(
         ec.presence_of_element_located((By.ID, 'job-listing-paginate-text'))
@@ -71,20 +72,52 @@ def get_total_pages() -> int:
 
     return total_page
 
-def get_all_jobs() -> list[list[str]]:
+def get_all_jobs() -> DataFrame:
     data = []
     total_page = get_total_pages()
 
     for i in range(1,total_page+1):
         driver = webdriver.Chrome(service=Service(), options=chrome_options)
-        driver.get(f'https://www.topcv.vn/tim-viec-lam-data-engineer-tai-ha-noi-kl1?type_keyword=1&page={i}&locations=l1&sba=1')
+        driver.get(f'https://www.topcv.vn/tim-viec-lam-data-engineer?type_keyword=1&page={i}')
         data += get_job_list(driver)
         driver.quit()
 
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_rows', None)
+
+    data = pd.DataFrame(data)
+    data.columns = ['position', 'company', 'salary', 'address', 'exp']
+
+    data['source'] = 'topCV'
+
+    # Ensure salary column is a string and stripped of leading/trailing spaces
+    data['salary'] = data['salary'].astype(str).str.strip()
+
+    # Initialize columns
+    data['min_salary'] = 0
+    data['max_salary'] = 0
+
+    # Case 1: 'Thoả thuận' → No salary values
+    condition = data['salary'].str.contains('Thoả thuận', na=False)
+    data.loc[condition, ['min_salary', 'max_salary']] = [0, 0]
+
+    # Case 2: 'Tới X USD' or 'Tới X triệu'
+    condition = data['salary'].str.startswith('Tới')
+    is_usd = data['salary'].str.contains('USD', na=False)
+    data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',', '').astype(float)
+    data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+    data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+    # Case 3: 'X - Y USD' or 'X - Y triệu'
+    condition = data['salary'].str.contains('-')
+    split_salaries = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ')
+
+    data.loc[condition, 'min_salary'] = split_salaries.str[0].astype(float)
+    data.loc[condition, 'max_salary'] = split_salaries.str[1].str.split().str[0].astype(float)
+    data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+    print(data)
+
     return data
 
-# if __name__ == '__main__':
-#     data = get_all_jobs()
-#
-#     data = pd.DataFrame(data)
-#     data.columns = ['Vị trí', 'Công ty', 'Mức lương', 'Địa chỉ', 'Kinh nghiệm']
+get_all_jobs()
