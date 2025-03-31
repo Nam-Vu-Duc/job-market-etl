@@ -1,3 +1,4 @@
+import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,7 +15,11 @@ import json
 
 chrome_options = Options()
 chrome_options.add_argument("start-maximized")
+chrome_options.add_argument("--incognito")
 chrome_options.add_argument("disable-blink-features=AutomationControlled")  # Hide Selenium
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
 
 def delivery_report(err, msg):
     if err is not None:
@@ -23,11 +28,11 @@ def delivery_report(err, msg):
         print(f'Message delivered to {msg.topic()} [{msg.partition()}]')
 
 def insert_to_mysql(conn, cur, data) -> None:
-    cur.execute(
+    cur.executemany(
         """
-        INSERT INTO jobs.jobs(source, position, company, salary, address, exp, query_day) VALUES(%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO jobs.jobs(position, company, address, source, query_day, min_salary, max_salary, experience) VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (data['source'], data['position'], data['company'], data['salary'], data['address'], data['exp'], datetime.today().strftime('%Y-%m-%d'))
+        [tuple(row) for row in data.itertuples(index=False, name=None)]
     )
     conn.commit()
     return
@@ -64,6 +69,7 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
         job_lists = job_lists_container.find_elements(By.CLASS_NAME, 'job-item-search-result')
 
         # query each job in each page
+        data = []
         for job in job_lists:
             try:
                 position = job.find_element(By.CSS_SELECTOR, "h3.title a span").text.strip()
@@ -71,7 +77,7 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
                 position = "Not Available"
 
             try:
-                company = job.find_element(By.CSS_SELECTOR, "a.company span").text.strip()
+                company = job.find_element(By.CSS_SELECTOR, "a.company span.company-name").text.strip()
             except NoSuchElementException:
                 company = "Not Available"
 
@@ -90,19 +96,54 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
             except NoSuchElementException:
                 exp = "Not Available"
 
-            data = {
-                'source'    : 'topcv',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : exp
-            }
+            data.append([position, company, salary, address, exp])
 
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
+        data = pd.DataFrame(data)
+        data.columns = ['position', 'company', 'salary', 'address', 'exp']
+
+        # Ensure salary column is a string and stripped of leading/trailing spaces
+        data['salary'] = data['salary'].astype(str).str.strip()
+        data['exp']    = data['exp'].astype(str).str.strip()
+
+        # Initialize columns
+        data['source']     = 'topcv'
+        data['query_day']  = time.strftime("%Y-%m-%d")
+        data['min_salary'] = 0
+        data['max_salary'] = 0
+        data['final_exp']  = 0
+
+        # CLEAN EXPERIENCE
+        # Case 1: 'ko yeu cau' -> 0
+        # Case 2: 'năm'
+        condition = data['exp'].str.contains('năm')
+        data.loc[condition, 'final_exp'] = data.loc[condition, 'exp'].str.split().str[-2].astype(int)
+
+        # delete column exp
+        data = data.drop('exp', axis=1)
+
+        # CLEAN SALARY
+        # Case 1: 'Thoả thuận' → min = max = 0
+        # Case 2: 'Tới X USD' or 'Tới X triệu'
+        condition = data['salary'].str.startswith('Tới')
+        is_usd = data['salary'].str.contains('USD', na=False)
+        data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',', '').astype(float)
+        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+        # Case 3: 'X - Y USD' or 'X - Y triệu'
+        condition = data['salary'].str.contains('-')
+        data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[0].astype(float)
+        data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+        data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+        # delete column salary
+        data = data.drop('salary', axis=1)
+
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
 
         driver.quit()
+    return
 
 def get_job_from_career_link(conn, cur, producer) -> None:
     # get total pages
@@ -121,7 +162,6 @@ def get_job_from_career_link(conn, cur, producer) -> None:
     else:
         total_page = 1
 
-    # get jobs each page
     for i in range(1, total_page+1):
         # open web
         driver.get(f'https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page={i}')
@@ -133,6 +173,7 @@ def get_job_from_career_link(conn, cur, producer) -> None:
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.media-body.overflow-hidden")
 
         # query each job in each page
+        data = []
         for job in job_lists:
             try:
                 position = job.find_element(By.CSS_SELECTOR, "h5.job-name").text.strip()
@@ -154,24 +195,51 @@ def get_job_from_career_link(conn, cur, producer) -> None:
             except NoSuchElementException:
                 address = "Not Available"
 
-            data = {
-                'source'    : 'careerlink',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : ''
-            }
+            data.append([position, company, salary, address])
 
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
+
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
+
+            # Initialize columns
+            data['source'] = 'careerlink'
+            data['query_day'] = time.strftime("%Y-%m-%d")
+            data['min_salary'] = 0
+            data['max_salary'] = 0
+            data['final_exp'] = 0
+
+            # CLEAN SALARY
+            # Case 1: 'Thoả thuận' → min = max = 0
+            # Case 2: 'Tới X USD' or 'Tới X triệu'
+            condition = data['salary'].str.startswith('Tới')
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',', '').astype(float)
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+            # Case 3: 'X - Y USD' or 'X - Y triệu'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
+                0].astype(float)
+            data.loc[condition, 'max_salary'] = \
+            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+            # delete column salary
+            data = data.drop('salary', axis=1)
+
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
 
     driver.quit()
+    return
 
 def get_job_from_career_viet(conn, cur, producer) -> None:
     # get total pages
     driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-1-vi.html')
+    driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-vi.html')
 
     try:
         pagination = WebDriverWait(driver, 10).until(
@@ -185,6 +253,7 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
     else:
         total_page = 1
 
+    # get jobs each page
     for i in range(1, total_page+1):
         # open web
         driver.get(f'https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-{i}-vi.html')
@@ -198,6 +267,7 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.figcaption")
 
         # query each job in each page
+        data = []
         for job in job_lists:
             try:
                 position = job.find_element(By.CSS_SELECTOR, "h2 a").text.strip()
@@ -219,17 +289,45 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
             except NoSuchElementException:
                 address = "Not Available"
 
-            data = {
-                'source'    : 'careerviet',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : ''
-            }
+            data.append([position, company, salary, address])
 
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
+
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
+
+            # Initialize columns
+            data['source'] = 'careerviet'
+            data['query_day'] = time.strftime("%Y-%m-%d")
+            data['min_salary'] = 0
+            data['max_salary'] = 0
+            data['final_exp'] = 0
+
+            # CLEAN SALARY
+            # Case 1: 'Thoả thuận' → min = max = 0
+            # Case 2: 'Tới X USD' or 'Tới X triệu'
+            condition = data['salary'].str.startswith('Tới')
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
+                                                                                                             '').astype(
+                float)
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+            # Case 3: 'X - Y USD' or 'X - Y triệu'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
+                0].astype(float)
+            data.loc[condition, 'max_salary'] = \
+            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+            # delete column salary
+            data = data.drop('salary', axis=1)
+
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
 
     driver.quit()
     return
@@ -253,6 +351,7 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
 
     driver.quit()
 
+    # get jobs each page
     for i in range(1, total_page+1):
         # open web
         driver = webdriver.Chrome(service=Service(), options=chrome_options)
@@ -265,6 +364,7 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.job-card")
 
         # query each job in each page
+        data = []
         for job in job_lists:
             try:
                 position = job.find_element(By.CSS_SELECTOR, "h3.imt-3").text.strip()
@@ -286,14 +386,42 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
             except NoSuchElementException:
                 address = "Not Available"
 
-            data = {
-                'source'    : 'itviec',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : ''
-            }
+            data.append([position, company, salary, address])
+
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
+
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
+
+            # Initialize columns
+            data['source'] = 'topcv'
+            data['query_day'] = time.strftime("%Y-%m-%d")
+            data['min_salary'] = 0
+            data['max_salary'] = 0
+            data['final_exp'] = 0
+
+            # CLEAN SALARY
+            # Case 1: 'Thoả thuận' → min = max = 0
+            # Case 2: 'Tới X USD' or 'Tới X triệu'
+            condition = data['salary'].str.startswith('Tới')
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
+                                                                                                             '').astype(
+                float)
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+            # Case 3: 'X - Y USD' or 'X - Y triệu'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
+                0].astype(float)
+            data.loc[condition, 'max_salary'] = \
+            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+            # delete column salary
+            data = data.drop('salary', axis=1)
 
             insert_to_mysql(conn, cur, data)
             insert_to_kafka(producer, data)
@@ -308,24 +436,23 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
 
     try:
         pagination = WebDriverWait(driver, 10).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'h1.job-matched span'))
+            ec.presence_of_element_located((By.CSS_SELECTOR, 'div.wrapper-job-criteria'))
         )
     except (TimeoutException, NoSuchElementException):
         pagination = None
 
-    if pagination.text:
-        total_page = math.ceil(int(pagination.text)/50)
+    if pagination:
+        total_page = math.ceil(779/50)
     else:
         total_page = 1
 
-    driver.quit()
-
+    # get jobs each page
+    data = []
     for i in range(1, total_page+1):
         # open web
-        driver = webdriver.Chrome(service=Service(), options=chrome_options)
         driver.get(f'https://www.vietnamworks.com/viec-lam?g=5&page={i}')
         driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
-        time.sleep(1)
+        time.sleep(2)
 
         # get job elements, use presence_of_element_located to await til the element appears
         job_lists_container = WebDriverWait(driver, 20).until(
@@ -355,21 +482,50 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
             except NoSuchElementException:
                 address = "Not Available"
 
-            data = {
-                'source'    : 'vietnamworks',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : ''
-            }
+            data.append([position, company, salary, address])
 
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
 
-        driver.quit()
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
 
-def get_job_from_vieclam_24h(conn, cur) -> None:
+            # Initialize columns
+            data['source'] = 'topcv'
+            data['query_day'] = time.strftime("%Y-%m-%d")
+            data['min_salary'] = 0
+            data['max_salary'] = 0
+            data['final_exp'] = 0
+
+            # CLEAN SALARY
+            # Case 1: 'Thoả thuận' → min = max = 0
+            # Case 2: 'Tới X USD' or 'Tới X triệu'
+            condition = data['salary'].str.startswith('Tới')
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
+                                                                                                             '').astype(
+                float)
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+            # Case 3: 'X - Y USD' or 'X - Y triệu'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
+                0].astype(float)
+            data.loc[condition, 'max_salary'] = \
+            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+            # delete column salary
+            data = data.drop('salary', axis=1)
+
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
+
+    driver.quit()
+    return
+
+def get_job_from_vieclam_24h(conn, cur, producer) -> None:
     driver = webdriver.Chrome(service=Service(), options=chrome_options)
     driver.get('https://vieclam24h.vn/tim-kiem-viec-lam-nhanh?occupation_ids%5B%5D=7&occupation_ids%5B%5D=8&occupation_ids%5B%5D=33&page=1')
 
@@ -403,34 +559,32 @@ def get_job_from_vieclam_24h(conn, cur) -> None:
             except NoSuchElementException:
                 position = "Not Available"
 
-            # try:
-            #     company = job.find_element(By.CSS_SELECTOR, "h3.text-[14px].leading-6.text-[#939295].line-clamp-1").text.strip()
-            # except NoSuchElementException:
-            #     company = "Not Available"
-            #
-            # try:
-            #     salary = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center span").text.strip()
-            # except NoSuchElementException:
-            #     salary = "Not Available"
-            #
-            # try:
-            #     address = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center.relative.province-tooltip span").text.strip()
-            # except NoSuchElementException:
-            #     address = "Not Available"
+            try:
+                company = job.find_element(By.CSS_SELECTOR, "h3.text-[14px].leading-6.text-[#939295].line-clamp-1").text.strip()
+            except NoSuchElementException:
+                company = "Not Available"
+
+            try:
+                salary = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center span").text.strip()
+            except NoSuchElementException:
+                salary = "Not Available"
+
+            try:
+                address = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center.relative.province-tooltip span").text.strip()
+            except NoSuchElementException:
+                address = "Not Available"
 
             data = {
                 'source'    : 'vieclam24h',
                 'position'  : position,
-                # 'company'   : company,
-                # 'salary'    : salary,
-                # 'address'   : address,
+                'company'   : company,
+                'salary'    : salary,
+                'address'   : address,
                 'exp'       : ''
             }
 
-            print(data)
-
-            # insert_to_mysql(conn, cur, data)
-            # insert_to_kafka(producer, data)
+            insert_to_mysql(conn, cur, data)
+            insert_to_kafka(producer, data)
 
     driver.quit()
 
@@ -442,15 +596,14 @@ if __name__ == '__main__':
             user="root",
             password="root"
         )
-
         cur = conn.cursor()
 
-        # get_job_from_top_cv(conn, cur, producer)
+        get_job_from_top_cv(conn, cur, 1)
         # get_job_from_career_link(conn, cur, producer)
         # get_job_from_career_viet(conn, cur, producer)
         # get_job_from_it_viec(conn, cur, producer)
         # get_job_from_vietnam_works(conn, cur, producer)
-        # get_job_from_vieclam_24h(conn, cur)
+        # get_job_from_vieclam_24h(conn, cur, producer)
 
     except Exception as e:
         print(e)
