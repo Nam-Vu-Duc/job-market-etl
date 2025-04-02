@@ -1,4 +1,3 @@
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -8,10 +7,12 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from datetime import datetime
 from confluent_kafka import SerializingProducer
+from unidecode import unidecode
 import mysql.connector
 import time
 import math
 import json
+import pandas as pd
 
 chrome_options = Options()
 chrome_options.add_argument("start-maximized")
@@ -25,7 +26,7 @@ def delivery_report(err, msg):
     if err is not None:
         print(f'Message delivery failed: {msg}')
     else:
-        print(f'Message delivered to {msg.topic()} [{msg.partition()}]')
+        print(f'Message delivered to {msg.topic()}')
 
 def insert_to_mysql(conn, cur, data) -> None:
     cur.executemany(
@@ -38,12 +39,17 @@ def insert_to_mysql(conn, cur, data) -> None:
     return
 
 def insert_to_kafka(producer, data) -> None:
-    producer.produce(
-        'jobs-topic',
-        key=data['position'],
-        value=json.dumps(data),
-        on_delivery=delivery_report
-    )
+    for index, row in data.iterrows():
+        row['position'] = unidecode(row['position'])
+        row['company'] = unidecode(row['company'])
+        row['address'] = unidecode(row['address'])
+        producer.produce(
+            'jobs-topic',
+            key=str(row['position']).encode('utf-8'),  # Use row value as key
+            value=row.to_json(),  # Convert single row to JSON
+            on_delivery=delivery_report
+        )
+    producer.flush()
 
 def get_job_from_top_cv(conn, cur, producer) -> None:
     # get total pages
@@ -108,15 +114,19 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
         # Initialize columns
         data['source']     = 'topcv'
         data['query_day']  = time.strftime("%Y-%m-%d")
-        data['min_salary'] = 0
-        data['max_salary'] = 0
+        data['min_salary'] = 0.0
+        data['max_salary'] = 0.0
         data['final_exp']  = 0
 
         # CLEAN EXPERIENCE
         # Case 1: 'ko yeu cau' -> 0
-        # Case 2: 'năm'
+        # Case 2: ' X năm'
         condition = data['exp'].str.contains('năm')
-        data.loc[condition, 'final_exp'] = data.loc[condition, 'exp'].str.split().str[-2].astype(int)
+        data.loc[condition, 'final_exp'] = (
+            data.loc[condition, 'exp']
+            .str.split().str[-2]
+            .astype(int)
+        )
 
         # delete column exp
         data = data.drop('exp', axis=1)
@@ -126,14 +136,29 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
         # Case 2: 'Tới X USD' or 'Tới X triệu'
         condition = data['salary'].str.startswith('Tới')
         is_usd = data['salary'].str.contains('USD', na=False)
-        data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',', '').astype(float)
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split().str[1].str
+            .replace(',', '').astype(float)
+        )
         data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
         data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
         # Case 3: 'X - Y USD' or 'X - Y triệu'
         condition = data['salary'].str.contains('-')
-        data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[0].astype(float)
-        data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+        data.loc[condition, 'min_salary'] = (
+            data.loc[condition, 'salary']
+            .str.replace(',', '')
+            .str.split(' - ')
+            .str[0].astype(float)
+        )
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.replace(',', '')
+            .str.split(' - ').str[1]
+            .str.split().str[0]
+            .astype(float)
+        )
         data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
         # delete column salary
@@ -197,38 +222,54 @@ def get_job_from_career_link(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
-            data = pd.DataFrame(data)
-            data.columns = ['position', 'company', 'salary', 'address']
+        data = pd.DataFrame(data)
+        data.columns = ['position', 'company', 'salary', 'address']
 
-            # Ensure salary column is a string and stripped of leading/trailing spaces
-            data['salary'] = data['salary'].astype(str).str.strip()
+        # Ensure salary column is a string and stripped of leading/trailing spaces
+        data['salary'] = data['salary'].astype(str).str.strip()
 
-            # Initialize columns
-            data['source'] = 'careerlink'
-            data['query_day'] = time.strftime("%Y-%m-%d")
-            data['min_salary'] = 0
-            data['max_salary'] = 0
-            data['final_exp'] = 0
+        # Initialize columns
+        data['source']      = 'careerlink'
+        data['query_day']   = time.strftime("%Y-%m-%d")
+        data['min_salary']  = 0.0
+        data['max_salary']  = 0.0
+        data['final_exp']   = 0
 
-            # CLEAN SALARY
-            # Case 1: 'Thoả thuận' → min = max = 0
-            # Case 2: 'Tới X USD' or 'Tới X triệu'
-            condition = data['salary'].str.startswith('Tới')
-            is_usd = data['salary'].str.contains('USD', na=False)
-            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',', '').astype(float)
-            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+        # CLEAN SALARY
+        # Case 1: 'Thương lượng' or 'Cạnh tranh'
+        # Case 2: 'X triệu' or 'Trên X triệu'
+        condition = data['salary'].str.contains('triệu', na=False) & ~data['salary'].str.contains('-', na=False)
+        is_usd = data['salary'].str.contains('USD', na=False)
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split()
+            .apply(lambda x: float(x[0]) if len(x) == 2 else float(x[1]))
+        ) # check if X triệu or Trên X triệu by its length
+        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-            # Case 3: 'X - Y USD' or 'X - Y triệu'
-            condition = data['salary'].str.contains('-')
-            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
-                0].astype(float)
-            data.loc[condition, 'max_salary'] = \
-            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
-            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+        # Case 3: 'X triệu - Y triệu' or 'X USD - Y USD'
+        condition = data['salary'].str.contains('-')
+        data.loc[condition, 'min_salary'] = (
+            data.loc[condition, 'salary']
+            .str.replace(',', '', regex=True)
+            .str.split(' - ').str[0]
+            .str.split().str[0]
+            .astype(float)
+        )
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.replace(',', '', regex=True)
+            .str.split(' - ').str[1]
+            .str.split().str[0]
+            .astype(float)
+        )
+        data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
-            # delete column salary
-            data = data.drop('salary', axis=1)
+        # delete column salary
+        data = data.drop('salary', axis=1)
+
+        print(data)
 
         insert_to_mysql(conn, cur, data)
         insert_to_kafka(producer, data)
@@ -291,40 +332,73 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
-            data = pd.DataFrame(data)
-            data.columns = ['position', 'company', 'salary', 'address']
+        data = pd.DataFrame(data)
+        data.columns = ['position', 'company', 'salary', 'address']
 
-            # Ensure salary column is a string and stripped of leading/trailing spaces
-            data['salary'] = data['salary'].astype(str).str.strip()
+        # Ensure salary column is a string and stripped of leading/trailing spaces
+        data['salary'] = data['salary'].astype(str).str.strip()
 
-            # Initialize columns
-            data['source'] = 'careerviet'
-            data['query_day'] = time.strftime("%Y-%m-%d")
-            data['min_salary'] = 0
-            data['max_salary'] = 0
-            data['final_exp'] = 0
+        # Initialize columns
+        data['source']      = 'careerviet'
+        data['query_day']   = time.strftime("%Y-%m-%d")
+        data['min_salary']  = 0.0
+        data['max_salary']  = 0.0
+        data['final_exp']   = 0
 
-            # CLEAN SALARY
-            # Case 1: 'Thoả thuận' → min = max = 0
-            # Case 2: 'Tới X USD' or 'Tới X triệu'
-            condition = data['salary'].str.startswith('Tới')
-            is_usd = data['salary'].str.contains('USD', na=False)
-            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
-                                                                                                             '').astype(
-                float)
-            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+        # CLEAN SALARY
+        # Case 1: 'Cạnh tranh'
+        # Case 2: 'Lương: Trên X Tr VND'
+        condition = data['salary'].str.contains('Tr', na=False) & ~data['salary'].str.contains('-', na=False)
+        is_usd = data['salary'].str.contains('USD', na=False)
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.split().str[1]
+            .astype(float)
+        )
+        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-            # Case 3: 'X - Y USD' or 'X - Y triệu'
-            condition = data['salary'].str.contains('-')
-            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
-                0].astype(float)
-            data.loc[condition, 'max_salary'] = \
-            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
-            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+        # Case 3: 'Lương: X Tr - Y Tr VND'
+        condition = data['salary'].str.contains('-') & data['salary'].str.contains('Tr')
+        data.loc[condition, 'min_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.replace(',', '')
+            .str.split(' - ').str[0]
+            .str.split().str[0]
+            .astype(float)
+        )
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.replace(',', '')
+            .str.split(' - ').str[1]
+            .str.split().str[0]
+            .astype(float)
+        )
 
-            # delete column salary
-            data = data.drop('salary', axis=1)
+        # CASE 4: 'Lương: X - Y USD'
+        condition = data['salary'].str.contains('-') & data['salary'].str.contains('USD')
+        data.loc[condition, 'min_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.replace(',', '')
+            .str.split(' - ').str[0]
+            .astype(float)
+        )
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.replace(',', '')
+            .str.split(' - ').str[1]
+            .str.split().str[0]
+            .astype(float)
+        )
+        data.loc[condition, ['min_salary', 'max_salary']] *= 25000 / 1000000
+
+        # delete column salary
+        data = data.drop('salary', axis=1)
 
         insert_to_mysql(conn, cur, data)
         insert_to_kafka(producer, data)
@@ -388,43 +462,21 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
-            data = pd.DataFrame(data)
-            data.columns = ['position', 'company', 'salary', 'address']
+        data = pd.DataFrame(data)
+        data.columns = ['position', 'company', 'salary', 'address']
 
-            # Ensure salary column is a string and stripped of leading/trailing spaces
-            data['salary'] = data['salary'].astype(str).str.strip()
+        # Initialize columns
+        data['source']      = 'itviec'
+        data['query_day']   = time.strftime("%Y-%m-%d")
+        data['min_salary']  = 0.0
+        data['max_salary']  = 0.0
+        data['final_exp']   = 0
 
-            # Initialize columns
-            data['source'] = 'topcv'
-            data['query_day'] = time.strftime("%Y-%m-%d")
-            data['min_salary'] = 0
-            data['max_salary'] = 0
-            data['final_exp'] = 0
+        # delete column salary
+        data = data.drop('salary', axis=1)
 
-            # CLEAN SALARY
-            # Case 1: 'Thoả thuận' → min = max = 0
-            # Case 2: 'Tới X USD' or 'Tới X triệu'
-            condition = data['salary'].str.startswith('Tới')
-            is_usd = data['salary'].str.contains('USD', na=False)
-            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
-                                                                                                             '').astype(
-                float)
-            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
-
-            # Case 3: 'X - Y USD' or 'X - Y triệu'
-            condition = data['salary'].str.contains('-')
-            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
-                0].astype(float)
-            data.loc[condition, 'max_salary'] = \
-            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
-            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
-
-            # delete column salary
-            data = data.drop('salary', axis=1)
-
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
 
         driver.quit()
 
@@ -447,8 +499,7 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
         total_page = 1
 
     # get jobs each page
-    data = []
-    for i in range(1, total_page+1):
+    for i in range(1, 2):
         # open web
         driver.get(f'https://www.vietnamworks.com/viec-lam?g=5&page={i}')
         driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
@@ -461,6 +512,7 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.sc-eEbqID.jZzXhN")
 
         # query each job in each page
+        data = []
         for job in job_lists:
             try:
                 position = job.find_element(By.CSS_SELECTOR, "h2 a").text.strip()
@@ -484,112 +536,52 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
-            data = pd.DataFrame(data)
-            data.columns = ['position', 'company', 'salary', 'address']
+        print(data)
 
-            # Ensure salary column is a string and stripped of leading/trailing spaces
-            data['salary'] = data['salary'].astype(str).str.strip()
+        data = pd.DataFrame(data)
+        data.columns = ['position', 'company', 'salary', 'address']
 
-            # Initialize columns
-            data['source'] = 'topcv'
-            data['query_day'] = time.strftime("%Y-%m-%d")
-            data['min_salary'] = 0
-            data['max_salary'] = 0
-            data['final_exp'] = 0
+        # Ensure salary column is a string and stripped of leading/trailing spaces
+        data['salary'] = data['salary'].astype(str).str.strip()
 
-            # CLEAN SALARY
-            # Case 1: 'Thoả thuận' → min = max = 0
-            # Case 2: 'Tới X USD' or 'Tới X triệu'
-            condition = data['salary'].str.startswith('Tới')
-            is_usd = data['salary'].str.contains('USD', na=False)
-            data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
-                                                                                                             '').astype(
-                float)
-            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+        # Initialize columns
+        data['source']      = 'vietnamworks'
+        data['query_day']   = time.strftime("%Y-%m-%d")
+        data['min_salary']  = 0.0
+        data['max_salary']  = 0.0
+        data['final_exp']   = 0
 
-            # Case 3: 'X - Y USD' or 'X - Y triệu'
-            condition = data['salary'].str.contains('-')
-            data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
-                0].astype(float)
-            data.loc[condition, 'max_salary'] = \
-            data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
-            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+        # CLEAN SALARY
+        # Case 1: 'Thương lượng'
+        # Case 2: 'Tới $ X /tháng' or Tới $ X /năm' or 'Từ $ X /tháng'
+        condition = data['salary'].str.startswith('Tới')
+        is_usd = data['salary'].str.contains('USD', na=False)
+        data.loc[condition, 'max_salary'] = data.loc[condition, 'salary'].str.split().str[1].str.replace(',',
+                                                                                                         '').astype(
+            float)
+        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-            # delete column salary
-            data = data.drop('salary', axis=1)
+        # Case 3:  'Xtr-Ytr ₫/tháng'
+        condition = data['salary'].str.contains('-')
+        data.loc[condition, 'min_salary'] = data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[
+            0].astype(float)
+        data.loc[condition, 'max_salary'] = \
+        data.loc[condition, 'salary'].str.replace(',', '').str.split(' - ').str[1].str.split().str[0].astype(float)
+        data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
-        insert_to_mysql(conn, cur, data)
-        insert_to_kafka(producer, data)
+        # CASE 4: '$ X-Y /tháng'
+        # delete column salary
+        data = data.drop('salary', axis=1)
+
+        # insert_to_mysql(conn, cur, data)
+        # insert_to_kafka(producer, data)
 
     driver.quit()
     return
 
-def get_job_from_vieclam_24h(conn, cur, producer) -> None:
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
-    driver.get('https://vieclam24h.vn/tim-kiem-viec-lam-nhanh?occupation_ids%5B%5D=7&occupation_ids%5B%5D=8&occupation_ids%5B%5D=33&page=1')
-
-    try:
-        pagination = WebDriverWait(driver, 10).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'div.flex.items-center.gap-4 h1 strong'))
-        )
-    except (TimeoutException, NoSuchElementException):
-        pagination = None
-
-    if pagination.text:
-        total_page = math.ceil(int(pagination.text.replace('.', ''))/30)
-    else:
-        total_page = 1
-
-    for i in range(1, total_page+1):
-        # open web
-        driver.get(f'https://www.vietnamworks.com/viec-lam?g=5&page={i}')
-
-        # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 20).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "main.bg-se-titan-white"))
-        )
-        job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.flex.flex-col.flex-1.gap-1")
-        print('job_lists: ', job_lists)
-
-        # query each job in each page
-        for job in job_lists:
-            try:
-                position = job.find_element(By.CSS_SELECTOR, "div.inline-block.relative.group.align-middle h3").text.strip()
-            except NoSuchElementException:
-                position = "Not Available"
-
-            try:
-                company = job.find_element(By.CSS_SELECTOR, "h3.text-[14px].leading-6.text-[#939295].line-clamp-1").text.strip()
-            except NoSuchElementException:
-                company = "Not Available"
-
-            try:
-                salary = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center span").text.strip()
-            except NoSuchElementException:
-                salary = "Not Available"
-
-            try:
-                address = job.find_element(By.CSS_SELECTOR, "div.flex.gap-1.pr-1.pl-[2px].items-center.relative.province-tooltip span").text.strip()
-            except NoSuchElementException:
-                address = "Not Available"
-
-            data = {
-                'source'    : 'vieclam24h',
-                'position'  : position,
-                'company'   : company,
-                'salary'    : salary,
-                'address'   : address,
-                'exp'       : ''
-            }
-
-            insert_to_mysql(conn, cur, data)
-            insert_to_kafka(producer, data)
-
-    driver.quit()
-
 if __name__ == '__main__':
-    # producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
+    producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
     try:
         conn = mysql.connector.connect(
             host="localhost",
@@ -598,12 +590,11 @@ if __name__ == '__main__':
         )
         cur = conn.cursor()
 
-        get_job_from_top_cv(conn, cur, 1)
+        get_job_from_top_cv(conn, cur, producer)
         # get_job_from_career_link(conn, cur, producer)
         # get_job_from_career_viet(conn, cur, producer)
         # get_job_from_it_viec(conn, cur, producer)
-        # get_job_from_vietnam_works(conn, cur, producer)
-        # get_job_from_vieclam_24h(conn, cur, producer)
+        # get_job_from_vietnam_works(conn, cur, 1)
 
     except Exception as e:
         print(e)
