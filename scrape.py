@@ -5,9 +5,11 @@ from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium_stealth import stealth
 from datetime import datetime
 from confluent_kafka import SerializingProducer
 from unidecode import unidecode
+import undetected_chromedriver as uc
 import mysql.connector
 import time
 import math
@@ -18,6 +20,9 @@ chrome_options = Options()
 chrome_options.add_argument("start-maximized")
 chrome_options.add_argument("--incognito")
 chrome_options.add_argument("disable-blink-features=AutomationControlled")  # Hide Selenium
+chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+chrome_options.add_experimental_option("useAutomationExtension", False)
+chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -41,8 +46,8 @@ def insert_to_mysql(conn, cur, data) -> None:
 def insert_to_kafka(producer, data) -> None:
     for index, row in data.iterrows():
         row['position'] = unidecode(row['position'])
-        row['company'] = unidecode(row['company'])
-        row['address'] = unidecode(row['address'])
+        row['company']  = unidecode(row['company'])
+        row['address']  = unidecode(row['address'])
         producer.produce(
             'jobs-topic',
             key=str(row['position']).encode('utf-8'),  # Use row value as key
@@ -53,7 +58,7 @@ def insert_to_kafka(producer, data) -> None:
 
 def get_job_from_top_cv(conn, cur, producer) -> None:
     # get total pages
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    driver = uc.Chrome(headless=False, use_subprocess=False)
     driver.get('https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257')
 
     pagination = WebDriverWait(driver, 20).until(
@@ -61,13 +66,7 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
     )
     total_page = int(pagination.text.split()[2])
 
-    driver.quit()
-
     for i in range(1, total_page+1):
-        # open web
-        driver = webdriver.Chrome(service=Service(), options=chrome_options)
-        driver.get(f'https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257?page={i}')
-
         # get job elements, use presence_of_element_located to await til the element appears
         job_lists_container = WebDriverWait(driver, 20).until(
             ec.presence_of_element_located((By.CLASS_NAME, 'job-list-search-result'))
@@ -103,6 +102,10 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
                 exp = "Not Available"
 
             data.append([position, company, salary, address, exp])
+
+        # next page
+        driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[2].click()
+        time.sleep(2)
 
         data = pd.DataFrame(data)
         data.columns = ['position', 'company', 'salary', 'address', 'exp']
@@ -167,12 +170,12 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
         insert_to_mysql(conn, cur, data)
         insert_to_kafka(producer, data)
 
-        driver.quit()
+    driver.quit()
     return
 
 def get_job_from_career_link(conn, cur, producer) -> None:
     # get total pages
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    driver = uc.Chrome(headless=False, use_subprocess=False)
     driver.get('https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page=1')
     try:
         pagination = WebDriverWait(driver, 10).until(
@@ -187,12 +190,9 @@ def get_job_from_career_link(conn, cur, producer) -> None:
     else:
         total_page = 1
 
-    for i in range(1, total_page+1):
-        # open web
-        driver.get(f'https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page={i}')
-
+    for i in range(1, total_page):
         # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 20).until(
+        job_lists_container = WebDriverWait(driver, 50).until(
             ec.presence_of_element_located((By.CSS_SELECTOR, 'ul.list-group.mt-4'))
         )
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.media-body.overflow-hidden")
@@ -221,6 +221,10 @@ def get_job_from_career_link(conn, cur, producer) -> None:
                 address = "Not Available"
 
             data.append([position, company, salary, address])
+
+        # next page
+        driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
+        time.sleep(2)
 
         data = pd.DataFrame(data)
         data.columns = ['position', 'company', 'salary', 'address']
@@ -269,8 +273,6 @@ def get_job_from_career_link(conn, cur, producer) -> None:
         # delete column salary
         data = data.drop('salary', axis=1)
 
-        print(data)
-
         insert_to_mysql(conn, cur, data)
         insert_to_kafka(producer, data)
 
@@ -279,7 +281,7 @@ def get_job_from_career_link(conn, cur, producer) -> None:
 
 def get_job_from_career_viet(conn, cur, producer) -> None:
     # get total pages
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    driver = uc.Chrome(headless=False, use_subprocess=False)
     driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-vi.html')
 
     try:
@@ -296,15 +298,11 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
 
     # get jobs each page
     for i in range(1, total_page+1):
-        # open web
-        driver.get(f'https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-{i}-vi.html')
-        driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
-        time.sleep(1)
-
         # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 20).until(
+        job_lists_container = WebDriverWait(driver, 50).until(
             ec.presence_of_element_located((By.CSS_SELECTOR, 'div.jobs-side-list'))
         )
+        time.sleep(2)
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.figcaption")
 
         # query each job in each page
@@ -332,6 +330,10 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
+        # next page
+        driver.find_element(By.CSS_SELECTOR, 'div.pagination ul').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
+        time.sleep(2)
+
         data = pd.DataFrame(data)
         data.columns = ['position', 'company', 'salary', 'address']
 
@@ -348,12 +350,23 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
         # CLEAN SALARY
         # Case 1: 'Cạnh tranh'
         # Case 2: 'Lương: Trên X Tr VND'
-        condition = data['salary'].str.contains('Tr', na=False) & ~data['salary'].str.contains('-', na=False)
+        condition = data['salary'].str.contains('Trên', na=False) & ~data['salary'].str.contains('-', na=False)
         is_usd = data['salary'].str.contains('USD', na=False)
         data.loc[condition, 'max_salary'] = (
             data.loc[condition, 'salary']
             .str.split(':').str[1]
             .str.split().str[1]
+            .astype(float)
+        )
+        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+
+        # Case 3: 'Lương: Lên đến X Tr VND'
+        condition = data['salary'].str.contains('Lên đến', na=False)
+        data.loc[condition, 'max_salary'] = (
+            data.loc[condition, 'salary']
+            .str.split(':').str[1]
+            .str.split().str[2]
             .astype(float)
         )
         data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
@@ -407,7 +420,8 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
     return
 
 def get_job_from_it_viec(conn, cur, producer) -> None:
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    # get total pages
+    driver = uc.Chrome(headless=False, use_subprocess=False)
     driver.get('https://itviec.com/it-jobs?&page=1')
 
     try:
@@ -423,16 +437,10 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
     else:
         total_page = 1
 
-    driver.quit()
-
     # get jobs each page
-    for i in range(1, total_page+1):
-        # open web
-        driver = webdriver.Chrome(service=Service(), options=chrome_options)
-        driver.get(f'https://itviec.com/it-jobs?&page={i}')
-
+    for i in range(1, total_page):
         # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 20).until(
+        job_lists_container = WebDriverWait(driver, 50).until(
             ec.presence_of_element_located((By.CSS_SELECTOR, 'div.col-xl-5.card-jobs-list.ips-0.ipe-0.ipe-xl-6'))
         )
         job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.job-card")
@@ -462,6 +470,12 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
+        # next page
+        driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
+        time.sleep(2)
+        driver.find_element(By.CSS_SELECTOR, 'div.pagination-search-jobs nav.ipagination').find_element(By.CSS_SELECTOR, 'div.page.next').click()
+        time.sleep(2)
+
         data = pd.DataFrame(data)
         data.columns = ['position', 'company', 'salary', 'address']
 
@@ -478,12 +492,12 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
         insert_to_mysql(conn, cur, data)
         insert_to_kafka(producer, data)
 
-        driver.quit()
-
+    driver.quit()
     return
 
 def get_job_from_vietnam_works(conn, cur, producer) -> None:
-    driver = webdriver.Chrome(service=Service(), options=chrome_options)
+    # get total pages
+    driver = uc.Chrome(headless=False, use_subprocess=False)
     driver.get('https://www.vietnamworks.com/viec-lam?g=5&page=1')
 
     try:
@@ -498,10 +512,10 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
     else:
         total_page = 1
 
+    print(total_page)
+
     # get jobs each page
-    for i in range(1, 2):
-        # open web
-        driver.get(f'https://www.vietnamworks.com/viec-lam?g=5&page={i}')
+    for i in range(1, total_page):
         driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
         time.sleep(2)
 
@@ -536,7 +550,6 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
 
             data.append([position, company, salary, address])
 
-        print(data)
 
         data = pd.DataFrame(data)
         data.columns = ['position', 'company', 'salary', 'address']
@@ -574,8 +587,8 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
         # delete column salary
         data = data.drop('salary', axis=1)
 
-        # insert_to_mysql(conn, cur, data)
-        # insert_to_kafka(producer, data)
+        insert_to_mysql(conn, cur, data)
+        insert_to_kafka(producer, data)
 
     driver.quit()
     return
@@ -590,7 +603,7 @@ if __name__ == '__main__':
         )
         cur = conn.cursor()
 
-        get_job_from_top_cv(conn, cur, producer)
+        # get_job_from_top_cv(conn, cur, producer)
         # get_job_from_career_link(conn, cur, producer)
         # get_job_from_career_viet(conn, cur, producer)
         # get_job_from_it_viec(conn, cur, producer)

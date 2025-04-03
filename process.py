@@ -9,8 +9,6 @@ from datetime import datetime
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType, DateType
 from pyspark.sql.functions import lit, col, when, regexp_extract, regexp_replace, split
 
-
-
 def store_data(conn, cur, data):
     cur.execute(
         """
