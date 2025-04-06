@@ -18,22 +18,61 @@ consumer.subscribe(['jobs-topic'])
 
 producer = SerializingProducer(conf)
 
-while True:
-    # Poll for a message (timeout in seconds)
-    message = consumer.poll(timeout=1.0)  # 1-second timeout
+def create_tables(conn, cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS source_report (
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            query_date date,
+            source varchar(255),
+            min_salary float,
+            max_salary float,
+            total_jobs integer
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS address_report (
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            query_date date,
+            address varchar(255),
+            min_salary float,
+            max_salary float,
+            total_jobs integer
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS exp_report (
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            query_date date,
+            exp INTEGER,
+            min_salary float,
+            max_salary float,
+            total_jobs integer
+        )
+        """
+    )
+    conn.commit()
 
-    if message is None:  # No message received within the timeout
-        continue
+def fetch_from_postgres(conn, cur):
+    cur.execute("""
+        select count(*) voters_count from voters
+    """)
+    voters_count = cur.fetchone()[0]
 
-    if message.error():  # Check for Kafka errors
-        print(f"Consumer error: {message.error()}")
-        continue
+    cur.execute("""
+            select count(*) candidates_count from candidates
+        """)
+    candidates_count = cur.fetchone()[0]
 
-    # Process the message
-    print(f"Key: {message.key().decode('utf-8') if message.key() else 'None'}")
-    print(f"Value: {message.value().decode('utf-8') if message.value() else 'None'}")
-    print(f"Partition: {message.partition()}, Offset: {message.offset()}")
-    print("---")
+    return voters_count, candidates_count
 
-    # Manually commit the offset if auto.commit is disabled
-    consumer.commit(message)
+if __name__ == '__main__':
+    conn = psycopg2.connect('host=localhost dbname=voting user=postgres password=postgres')
+    cur = conn.cursor()
+
+    create_tables(conn, cur)
+    fetch_from_postgres(conn, cur)

@@ -3,7 +3,7 @@ import simplejson as json
 from confluent_kafka import Consumer, SerializingProducer, KafkaError
 from scrape import delivery_report
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import min as _min, max as _max, from_json, col, count, col, to_json, struct
+from pyspark.sql.functions import min as _min, max as _max, from_json, count, col, to_json, struct
 from datetime import datetime
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
@@ -65,6 +65,10 @@ if __name__ == '__main__':
         total_jobs = jobs_df.groupBy().count()
         total_jobs_json = total_jobs.select(to_json(struct("count")).alias("value"))
 
+        # Cal total_jobs_require_exp
+        total_jobs_require_exp = jobs_df.filter(jobs_df.experience > 0).groupBy().count()
+        total_jobs_require_exp_json = total_jobs_require_exp.select(to_json(struct("count")).alias("value"))
+
         # Calc each source total jobs
         total_jobs_each_source = jobs_df.groupBy("source").agg(
             _min("min_salary").alias("min_salary"),
@@ -94,6 +98,19 @@ if __name__ == '__main__':
         )
 
         # Write aggregated data to Kafka topics
+        total_jobs_require_exp_to_kafka = (total_jobs_json
+            .writeStream
+            .format("kafka")
+            .option("failOnDataLoss", "false")
+            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("topic", "total_jobs_require_exp_to_kafka")
+            .option("checkpointLocation",
+                   "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint4")
+            .outputMode("update")
+            .start()
+        )
+
+        # Write aggregated data to Kafka topics
         total_jobs_each_source_to_kafka = (total_jobs_each_source_json
             .writeStream
             .format("kafka")
@@ -111,7 +128,7 @@ if __name__ == '__main__':
             .format("kafka")
             .option("failOnDataLoss", "false")
             .option("kafka.bootstrap.servers", "localhost:9092")
-            .option("topic", "total_jobs_each_source")
+            .option("topic", "total_jobs_each_address")
             .option("checkpointLocation", "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint3")
             .outputMode("update")
             .start()
@@ -119,6 +136,7 @@ if __name__ == '__main__':
 
         # Await termination for the streaming queries
         total_jobs_to_kafka.awaitTermination()
+        total_jobs_require_exp_to_kafka.awaitTermination()
         total_jobs_each_source_to_kafka.awaitTermination()
         total_jobs_each_address_to_kafka.awaitTermination()
 
