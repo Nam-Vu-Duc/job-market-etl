@@ -1,8 +1,6 @@
 from datetime import timedelta, datetime
-
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from gunicorn.workers.ggevent import PyWSGIHandler
 
 default_args = {
     'owner': 'namvu',
@@ -23,8 +21,8 @@ def push_age(ti):
 
 with DAG(
     default_args=default_args,
-    dag_id='jobs_market_etl',
-    description='Jobs Market ETL',
+    dag_id='dag_with_python_operator',
+    description='dag_with_python_operator',
     start_date=datetime(2025, 4, 4),
     schedule_interval='@daily'
 ) as dag:
