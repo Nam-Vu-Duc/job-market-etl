@@ -5,12 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6ab25043-cf7c-408b-bdfb-d01bdf5f8b08" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/dags/create_dag_with_cron_expression.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/dags/create_dag_with_task_flow_api.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/dags/dag_with_catchup_and_backfill.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/dags/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/dags/create_dag_jobs_market_etl.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/plugins/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scripts/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dags/create_dag_with_python_operator.py" beforeDir="false" afterPath="$PROJECT_DIR$/dags/create_dag_with_python_operator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/logs/dag_processor_manager/dag_processor_manager.log" beforeDir="false" afterPath="$PROJECT_DIR$/logs/dag_processor_manager/dag_processor_manager.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dags/create_dag_with_task_flow_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/dags/create_dag_with_task_flow_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/process.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/process.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/scrape.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/visualize.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/visualize.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,6 +52,13 @@
     &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
 }</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\admin\PycharmProjects\webScraping" />
+      <recent name="C:\Users\admin\PycharmProjects\webScraping\plugins" />
+      <recent name="C:\Users\admin\PycharmProjects\webScraping\etl" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
