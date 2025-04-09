@@ -1,19 +1,14 @@
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium_stealth import stealth
-from datetime import datetime
 from confluent_kafka import SerializingProducer
 from unidecode import unidecode
 import undetected_chromedriver as uc
 import mysql.connector
 import time
 import math
-import json
 import pandas as pd
 
 chrome_options = Options()
@@ -631,3 +626,5 @@ def scrape():
 
     except Exception as e:
         print(e)
+
+scrape()

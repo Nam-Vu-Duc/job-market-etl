@@ -1,10 +1,7 @@
 import psycopg2
-import simplejson as json
 from confluent_kafka import Consumer, SerializingProducer, KafkaError
-from scrape import delivery_report
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import min as _min, max as _max, from_json, count, col, to_json, struct
-from datetime import datetime
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
 def store_data(conn, cur, data):
@@ -20,13 +17,20 @@ def store_data(conn, cur, data):
 def process():
     try:
         conn = psycopg2.connect(
-            dbname="jobs",
+            dbname="postgres",
             user="postgres",
             password="root",
             host="localhost",
             port="5432"
         )
         cur = conn.cursor()
+
+        cur.execute("""
+            select * from source_report
+        """)
+        result = cur.fetchone()
+        print(result)
+        return
 
         # Initialize SparkSession
         spark = (SparkSession.builder
@@ -142,3 +146,5 @@ def process():
 
     except Exception as e:
         print(e)
+
+process()

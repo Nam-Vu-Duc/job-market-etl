@@ -1,5 +1,4 @@
 import psycopg2
-import simplejson as json
 from confluent_kafka import Consumer, SerializingProducer, KafkaError
 
 conf = {'bootstrap.servers': 'localhost:9092'}

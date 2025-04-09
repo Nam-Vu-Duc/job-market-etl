@@ -1,13 +1,8 @@
 import sys
-import os
-
-# Add the parent directory (webScraping) to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Now use an absolute import
-from scripts import scrape
-from scripts import process
-from scripts import visualize
+sys.path.append('/opt/airflow')  # Add the parent directory of scripts/, not scripts/ itself
+from scripts.scrape import scrape
+from scripts.process import process
+from scripts.visualize import visualize
 
 from datetime import timedelta, datetime
 from airflow import DAG
