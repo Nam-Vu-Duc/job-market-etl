@@ -1,18 +1,7 @@
 import psycopg2
-from confluent_kafka import Consumer, SerializingProducer, KafkaError
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import min as _min, max as _max, from_json, count, col, to_json, struct
+from pyspark.sql.functions import min as _min, max as _max, avg, from_json, count, col, to_json, struct, when, filter
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
-
-def store_data(conn, cur, data):
-    cur.execute(
-        """
-        INSERT INTO jobs.jobs(total_jobs, min_salary, avg_salary, max_salary, query_day) VALUES(%s, %s, %s, %s, %s)
-        """,
-        (data['source'], data['position'], data['company'], data['salary'], data['address'])
-    )
-    conn.commit()
-    return
 
 def process():
     try:
@@ -24,13 +13,6 @@ def process():
             port="5432"
         )
         cur = conn.cursor()
-
-        cur.execute("""
-            select * from source_report
-        """)
-        result = cur.fetchone()
-        print(result)
-        return
 
         # Initialize SparkSession
         spark = (SparkSession.builder
@@ -50,7 +32,7 @@ def process():
             StructField("query_day" , DateType()   , True),
             StructField("min_salary", FloatType()  , True),
             StructField("max_salary", FloatType()  , True),
-            StructField("experience", IntegerType(), True)
+            StructField("final_exp" , IntegerType(), True)
         ])
 
         # Read data from Kafka 'jobs_topics'
@@ -65,84 +47,103 @@ def process():
             .select("data.*")
         )
 
-        # Cal total_jobs
-        total_jobs = jobs_df.groupBy().count()
-        total_jobs_json = total_jobs.select(to_json(struct("count")).alias("value"))
-
-        # Cal total_jobs_require_exp
-        total_jobs_require_exp = jobs_df.filter(jobs_df.experience > 0).groupBy().count()
-        total_jobs_require_exp_json = total_jobs_require_exp.select(to_json(struct("count")).alias("value"))
-
-        # Calc each source total jobs
-        total_jobs_each_source = jobs_df.groupBy("source").agg(
-            _min("min_salary").alias("min_salary"),
-            _max("max_salary").alias("max_salary"),
-            count("source").alias("total_jobs")
+        # Calc address report
+        address_report = (
+            jobs_df
+            .withColumn(
+                "salary",
+                when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
+                .otherwise(col("max_salary") / 2)
+            )
+            .groupBy("address")
+            .agg(
+                _min(when(col("min_salary") > 0, col("min_salary"))).alias("min_salary"),
+                _max("max_salary").alias("max_salary"),
+                avg("salary").alias("avg_salary"),
+                count("address").alias("total_jobs")
+            )
         )
-        total_jobs_each_source_json = total_jobs_each_source.select(to_json(struct("*")).alias("value"))
+        address_report_json = address_report.select(to_json(struct("*")).alias("value"))
 
-        # Calc each address total jobs
-        total_jobs_each_address = jobs_df.groupBy("address").agg(
-            _min("min_salary").alias("min_salary"),
-            _max("max_salary").alias("max_salary"),
-            count("address").alias("total_jobs")
+        # Calc source report
+        source_report = (
+            jobs_df
+            .withColumn(
+                "salary",
+                when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
+                .otherwise(col("max_salary") / 2)
+            )
+            .groupBy("source")
+            .agg(
+                _min(when(col("min_salary") > 0, col("min_salary"))).alias("min_salary"),
+                _max("max_salary").alias("max_salary"),
+                avg("salary").alias("avg_salary"),
+                count("source").alias("total_jobs")
+            )
         )
-        total_jobs_each_address_json = total_jobs_each_address.select(to_json(struct("*")).alias("value"))
+        source_report_json = source_report.select(to_json(struct("*")).alias("value"))
+
+        # Calc exp report
+        exp_report = (
+            jobs_df
+            .withColumn(
+                "salary",
+                when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
+                .otherwise(col("max_salary") / 2)
+            )
+            .groupBy("final_exp")
+            .agg(
+                _min(when(col("min_salary") > 0, col("min_salary"))).alias("min_salary"),
+                _max("max_salary").alias("max_salary"),
+                avg("salary").alias("avg_salary"),
+                count("final_exp").alias("total_jobs")
+            )
+        )
+        exp_report_json = exp_report.select(to_json(struct("*")).alias("value"))
 
         # Write aggregated data to Kafka topics
-        total_jobs_to_kafka = (total_jobs_json
+        address_report_to_kafka = (
+            address_report_json
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
             .option("kafka.bootstrap.servers", "localhost:9092")
-            .option("topic", "total_jobs")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint1")
+            .option("topic", "address_report")
+            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint2")
             .outputMode("update")
             .start()
         )
 
         # Write aggregated data to Kafka topics
-        total_jobs_require_exp_to_kafka = (total_jobs_json
+        source_report_to_kafka = (
+            source_report_json
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
             .option("kafka.bootstrap.servers", "localhost:9092")
-            .option("topic", "total_jobs_require_exp_to_kafka")
-            .option("checkpointLocation",
-                   "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint4")
+            .option("topic", "source_report")
+            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint3")
             .outputMode("update")
             .start()
         )
 
         # Write aggregated data to Kafka topics
-        total_jobs_each_source_to_kafka = (total_jobs_each_source_json
+        expreport_to_kafka = (
+            exp_report_json
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
             .option("kafka.bootstrap.servers", "localhost:9092")
-            .option("topic", "total_jobs_each_source")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint2")
-            .outputMode("update")
-            .start()
-        )
-
-        # Write aggregated data to Kafka topics
-        total_jobs_each_address_to_kafka = (total_jobs_each_address_json
-            .writeStream
-            .format("kafka")
-            .option("failOnDataLoss", "false")
-            .option("kafka.bootstrap.servers", "localhost:9092")
-            .option("topic", "total_jobs_each_address")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/PythonProject/checkpoints/checkpoint3")
+            .option("topic", "exp_report")
+            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint4")
             .outputMode("update")
             .start()
         )
 
         # Await termination for the streaming queries
-        total_jobs_to_kafka.awaitTermination()
-        total_jobs_require_exp_to_kafka.awaitTermination()
-        total_jobs_each_source_to_kafka.awaitTermination()
-        total_jobs_each_address_to_kafka.awaitTermination()
+        address_report_to_kafka.awaitTermination()
+        source_report_to_kafka.awaitTermination()
+        expreport_to_kafka.awaitTermination()
 
     except Exception as e:
         print(e)

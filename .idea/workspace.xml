@@ -5,15 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6ab25043-cf7c-408b-bdfb-d01bdf5f8b08" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/requirements-local" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dags/create_dag_jobs_market_etl.py" beforeDir="false" afterPath="$PROJECT_DIR$/dags/create_dag_jobs_market_etl.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/logs/dag_processor_manager/dag_processor_manager.log" beforeDir="false" afterPath="$PROJECT_DIR$/logs/dag_processor_manager/dag_processor_manager.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements-local" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/scripts/process.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/process.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/scripts/scrape.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/scrape.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/scripts/visualize.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/visualize.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/superset" beforeDir="false" afterPath="$PROJECT_DIR$/superset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/superset/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/superset/.gitignore" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,12 +41,14 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
     "Python.process.executor": "Run",
     "Python.scrape.executor": "Run",
     "Python.topCV.executor": "Run",
+    "Python.visualize.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "9/4",
+    "git-widget-placeholder": "10/4",
     "ignore.virus.scanning.warn.message": "true",
     "last_opened_file_path": "C:/Users/admin/PycharmProjects/PythonProject",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
@@ -54,7 +57,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-14705d77f0bb-aa17d162503b-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-243.25659.43" />
+        <option value="bundled-python-sdk-4f4e415b4190-aa17d162503b-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-243.26053.29" />
       </set>
     </attachedChunks>
   </component>
