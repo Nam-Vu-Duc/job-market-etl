@@ -1,19 +1,9 @@
-import psycopg2
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import min as _min, max as _max, avg, from_json, count, col, to_json, struct, when, filter
+from pyspark.sql.functions import min as _min, max as _max, avg, from_json, count, col, to_json, struct, when, filter, split, explode, trim, regexp_replace
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
 def process():
     try:
-        conn = psycopg2.connect(
-            dbname="postgres",
-            user="postgres",
-            password="root",
-            host="localhost",
-            port="5432"
-        )
-        cur = conn.cursor()
-
         # Initialize SparkSession
         spark = (SparkSession.builder
             .appName("JobMarket")
@@ -47,15 +37,43 @@ def process():
             .select("data.*")
         )
 
+        # CLEAN ADDRESS DATA
+        # Step 1: Replace common separators with a single one, e.g., comma
+        jobs_replaced = (
+            jobs_df
+            .withColumn(
+                "address_replaced",
+                regexp_replace(col("address"), r"[\n\r&,\-]+", "|")
+            )
+        )
+
+        # Step 2: Split by comma and explode into multiple rows
+        job_split = (
+            jobs_replaced
+            .withColumn(
+                "address_split",
+                explode(split("address_replaced", r"\|"))
+            )
+        )
+
+        # Step 3: Trim whitespace
+        job_cleaned = (
+            job_split
+            .withColumn(
+                "address_cleaned",
+                trim(col("address_split"))
+            )
+        )
+
         # Calc address report
         address_report = (
-            jobs_df
+            job_cleaned
             .withColumn(
                 "salary",
                 when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
                 .otherwise(col("max_salary") / 2)
             )
-            .groupBy("address")
+            .groupBy("address_cleaned")
             .agg(
                 _min(when(col("min_salary") > 0, col("min_salary"))).alias("min_salary"),
                 _max("max_salary").alias("max_salary"),
@@ -67,7 +85,7 @@ def process():
 
         # Calc source report
         source_report = (
-            jobs_df
+            job_split
             .withColumn(
                 "salary",
                 when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
@@ -85,7 +103,7 @@ def process():
 
         # Calc exp report
         exp_report = (
-            jobs_df
+            job_split
             .withColumn(
                 "salary",
                 when(col("min_salary") > 0, (col("min_salary") + col("max_salary")) / 2)
