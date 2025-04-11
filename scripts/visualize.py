@@ -15,7 +15,13 @@ consumer = Consumer(conf)
 consumer.subscribe(topics)
 
 # config postgres connect
-conn = psycopg2.connect('host=localhost dbname=voting user=postgres password=postgres')
+conn = psycopg2.connect(
+    dbname="postgres",
+    user="postgres",
+    password="root",
+    host="localhost",
+    port="5432"
+)
 cur = conn.cursor()
 
 def create_postgres_tables(conn, cur):
@@ -57,11 +63,11 @@ def create_postgres_tables(conn, cur):
     )
     conn.commit()
 
-def fetch_from_kafka():
-    address_data, source_data, exp_data = [], [], []
+def fetch_from_kafka_and_store_to_postgres():
+    print('Start fetching data from kafka')
     try:
         while True:
-            msg = consumer.poll(1.0)  # Wait up to 1 second
+            msg = consumer.poll(2.0)  # Wait up to 1 second
             if msg is None:
                 continue
             if msg.error():
@@ -70,23 +76,24 @@ def fetch_from_kafka():
                 data = json.loads(msg.value().decode('utf-8'))
                 print(f"[{msg.topic()}] {data}")
                 if msg.topic() == 'address_report':
-                    address_data.append(data)
+                    store_address_data_to_postgres(data)
                 elif msg.topic() == 'source_report':
-                    source_data.append(data)
+                    store_source_data_to_postgres(data)
                 else:
-                    exp_data.append(data)
+                    store_exp_data_to_postgres(data)
 
     except KeyboardInterrupt:
         print("Stopped.")
 
     finally:
         consumer.close()
-        return address_data, source_data, exp_data
+        return
 
-def store_to_postgres(address_data, source_data, exp_data):
+def store_address_data_to_postgres(address_data):
+    print('Start storing address data to postgres')
     try:
         # insert to address_report table
-        cur.executemany(
+        cur.execute(
             """
             INSERT INTO address_report(query_date, address, min_salary, max_salary, avg_salary, total_jobs) 
             VALUES(%s, %s, %s, %s, %s, %s)
@@ -96,19 +103,22 @@ def store_to_postgres(address_data, source_data, exp_data):
                 avg_salary = EXCLUDED.avg_salary,
                 total_jobs = EXCLUDED.total_jobs
             """,
-            [
-                (
-                    time.strftime("%Y-%m-%d"),
-                    d.get('address'),
-                    d.get('min_salary', None),
-                    d.get('max_salary', None),
-                    d.get('avg_salary', None),
-                    d.get('total_jobs', None)
-                )
-                for d in address_data
-            ]
+            (
+                time.strftime("%Y-%m-%d"),
+                address_data.get('address_cleaned'),
+                address_data.get('min_salary', None),
+                address_data.get('max_salary', None),
+                address_data.get('avg_salary', None),
+                address_data.get('total_jobs', None)
+            )
         )
+        conn.commit()
+    except Exception as e:
+        print(e)
 
+def store_source_data_to_postgres(source_data):
+    print('Start storing source data to postgres')
+    try:
         # insert to source_report table
         cur.execute(
             """
@@ -120,19 +130,22 @@ def store_to_postgres(address_data, source_data, exp_data):
                 avg_salary = EXCLUDED.avg_salary,
                 total_jobs = EXCLUDED.total_jobs
             """,
-            [
-                (
-                    time.strftime("%Y-%m-%d"),
-                    d.get('source'),
-                    d.get('min_salary', None),
-                    d.get('max_salary', None),
-                    d.get('avg_salary', None),
-                    d.get('total_jobs', None)
-                )
-                for d in source_data
-            ]
+            (
+                time.strftime("%Y-%m-%d"),
+                source_data.get('source'),
+                source_data.get('min_salary', None),
+                source_data.get('max_salary', None),
+                source_data.get('avg_salary', None),
+                source_data.get('total_jobs', None)
+            )
         )
+        conn.commit()
+    except Exception as e:
+        print(e)
 
+def store_exp_data_to_postgres(exp_data):
+    print('Start storing exp data to postgres')
+    try:
         # insert to exp_report table
         cur.execute(
             """
@@ -144,43 +157,17 @@ def store_to_postgres(address_data, source_data, exp_data):
                 avg_salary = EXCLUDED.avg_salary,
                 total_jobs = EXCLUDED.total_jobs
             """,
-            [
-                (
-                    time.strftime("%Y-%m-%d"),
-                    d.get('exp'),
-                    d.get('min_salary', None),
-                    d.get('max_salary', None),
-                    d.get('avg_salary', None),
-                    d.get('total_jobs', None)
-                )
-                for d in exp_data
-            ]
+            (
+                time.strftime("%Y-%m-%d"),
+                exp_data.get('final_exp'),
+                exp_data.get('min_salary', None),
+                exp_data.get('max_salary', None),
+                exp_data.get('avg_salary', None),
+                exp_data.get('total_jobs', None)
+            )
         )
         conn.commit()
     except Exception as e:
         print(e)
 
-def fetch_from_postgres():
-    cur.execute("""
-        select * from source_report
-    """)
-    source_report = cur.fetchone()
-
-    cur.execute("""
-        select * from address_report
-    """)
-    address_report = cur.fetchone()
-
-    cur.execute("""
-        select * from exp_report
-    """)
-    exp_report = cur.fetchone()
-
-    return source_report, address_report, exp_report
-
-def visualize_by_superset():
-    return
-
-def visualize():
-    address_data, source_data, exp_data = fetch_from_kafka()
-    store_to_postgres(address_data, source_data, exp_data)
+fetch_from_kafka_and_store_to_postgres()
