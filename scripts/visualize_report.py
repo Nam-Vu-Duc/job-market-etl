@@ -24,71 +24,6 @@ conn = psycopg2.connect(
 )
 cur = conn.cursor()
 
-def create_postgres_tables(conn, cur):
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS source_report (
-            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            query_date date,
-            source varchar(255),
-            min_salary float,
-            max_salary float,
-            total_jobs integer
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS address_report (
-            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            query_date date,
-            address varchar(255),
-            min_salary float,
-            max_salary float,
-            total_jobs integer
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS exp_report (
-            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            query_date date,
-            exp INTEGER,
-            min_salary float,
-            max_salary float,
-            total_jobs integer
-        )
-        """
-    )
-    conn.commit()
-
-def fetch_from_kafka_and_store_to_postgres():
-    print('Start fetching data from kafka')
-    try:
-        while True:
-            msg = consumer.poll(2.0)  # Wait up to 1 second
-            if msg is None:
-                continue
-            if msg.error():
-                print("Error:", msg.error())
-            else:
-                data = json.loads(msg.value().decode('utf-8'))
-                print(f"[{msg.topic()}] {data}")
-                if msg.topic() == 'address_report':
-                    store_address_data_to_postgres(data)
-                elif msg.topic() == 'source_report':
-                    store_source_data_to_postgres(data)
-                else:
-                    store_exp_data_to_postgres(data)
-
-    except KeyboardInterrupt:
-        print("Stopped.")
-
-    finally:
-        consumer.close()
-        return
-
 def store_address_data_to_postgres(address_data):
     print('Start storing address data to postgres')
     try:
@@ -169,5 +104,31 @@ def store_exp_data_to_postgres(exp_data):
         conn.commit()
     except Exception as e:
         print(e)
+
+def fetch_from_kafka_and_store_to_postgres():
+    print('Start fetching data from kafka')
+    try:
+        while True:
+            msg = consumer.poll(2.0)  # Wait up to 1 second
+            if msg is None:
+                continue
+            if msg.error():
+                print("Error:", msg.error())
+            else:
+                data = json.loads(msg.value().decode('utf-8'))
+                print(f"[{msg.topic()}] {data}")
+                if msg.topic() == 'address_report':
+                    store_address_data_to_postgres(data)
+                elif msg.topic() == 'source_report':
+                    store_source_data_to_postgres(data)
+                else:
+                    store_exp_data_to_postgres(data)
+
+    except KeyboardInterrupt:
+        print("Stopped.")
+
+    finally:
+        consumer.close()
+        return
 
 fetch_from_kafka_and_store_to_postgres()

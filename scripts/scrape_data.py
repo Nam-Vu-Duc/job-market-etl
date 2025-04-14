@@ -29,24 +29,6 @@ def delivery_report(err, msg):
     else:
         print(f'Message delivered to {msg.topic()}')
 
-def create_mysql_tables(conn, cur):
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS jobs.jobs (
-            id          INT AUTO_INCREMENT PRIMARY KEY,
-            position    VARCHAR(255),
-            company     VARCHAR(255),
-            address     VARCHAR(255),
-            source      VARCHAR(255),
-            query_day   DATE,
-            min_salary  FLOAT,
-            max_salary  FLOAT,
-            experience  INT
-        )
-        """
-    )
-    conn.commit()
-
 def insert_to_mysql(conn, cur, data) -> None:
     cur.executemany(
         """
@@ -620,8 +602,6 @@ def scrape():
             password="root"
         )
         cur = conn.cursor()
-
-        create_mysql_tables(conn, cur)
 
         get_job_from_top_cv(conn, cur, producer)
         get_job_from_career_link(conn, cur, producer)
