@@ -1,8 +1,8 @@
 import sys
 sys.path.append('/opt/airflow')  # Add the parent directory of scripts/, not scripts/ itself
-from scripts.scrape import scrape
-from scripts.process import process
-from scripts.visualize import visualize
+from scripts.scrape_data import scrape
+from scripts.process_data import process
+from scripts.visualize_report import visualize
 
 from datetime import timedelta, datetime
 from airflow import DAG
