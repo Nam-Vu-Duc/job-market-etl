@@ -3,7 +3,7 @@ import psycopg2
 
 def create_mysql_tables():
     conn = mysql.connector.connect(
-        host="localhost",
+        host="host.docker.internal",
         user="root",
         password="root"
     )
@@ -31,7 +31,7 @@ def create_postgres_tables():
         dbname="postgres",
         user="postgres",
         password="root",
-        host="localhost",
+        host="host.docker.internal",
         port="5432"
     )
     cur = conn.cursor()

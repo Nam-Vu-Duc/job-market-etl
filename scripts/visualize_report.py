@@ -19,7 +19,7 @@ conn = psycopg2.connect(
     dbname="postgres",
     user="postgres",
     password="root",
-    host="localhost",
+    host="host.docker.internal",
     port="5432"
 )
 cur = conn.cursor()
@@ -106,7 +106,6 @@ def store_exp_data_to_postgres(exp_data):
         print(e)
 
 def fetch_from_kafka_and_store_to_postgres():
-    print('Start fetching data from kafka')
     try:
         while True:
             msg = consumer.poll(2.0)  # Wait up to 1 second
@@ -116,7 +115,6 @@ def fetch_from_kafka_and_store_to_postgres():
                 print("Error:", msg.error())
             else:
                 data = json.loads(msg.value().decode('utf-8'))
-                print(f"[{msg.topic()}] {data}")
                 if msg.topic() == 'address_report':
                     store_address_data_to_postgres(data)
                 elif msg.topic() == 'source_report':

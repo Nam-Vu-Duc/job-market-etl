@@ -11,15 +11,11 @@ import time
 import math
 import pandas as pd
 
-chrome_options = Options()
-# chrome_options.add_argument("--headless")  # Run in headless mode
-chrome_options.add_argument("--incognito")
-
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
 def create_chrome_options():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument("--incognito")
     return chrome_options
 
@@ -55,7 +51,7 @@ def insert_to_kafka(producer, data) -> None:
 
 def get_job_from_top_cv(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options())
+    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
     driver.get('https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257')
 
     pagination = WebDriverWait(driver, 20).until(
@@ -172,7 +168,7 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
 
 def get_job_from_career_link(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options())
+    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
     driver.get('https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page=1')
     try:
         pagination = WebDriverWait(driver, 10).until(
@@ -279,7 +275,7 @@ def get_job_from_career_link(conn, cur, producer) -> None:
 
 def get_job_from_career_viet(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options())
+    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
     driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-20-vi.html')
 
     try:
@@ -421,7 +417,7 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
 
 def get_job_from_it_viec(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options())
+    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
     driver.get('https://itviec.com/it-jobs?&page=20')
 
     try:
@@ -497,7 +493,7 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
 
 def get_job_from_vietnam_works(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(options=chrome_options)
+    driver = uc.Chrome(create_chrome_options())
     driver.get('https://www.vietnamworks.com/viec-lam?g=5&page=1')
 
     try:
@@ -593,7 +589,7 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
     driver.quit()
     return
 
-def scrape():
+def scrape_data():
     producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
     try:
         conn = mysql.connector.connect(
@@ -612,4 +608,4 @@ def scrape():
     except Exception as e:
         print(e)
 
-scrape()
+scrape_data()

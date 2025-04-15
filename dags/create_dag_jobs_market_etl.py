@@ -1,9 +1,10 @@
 import sys
-sys.path.append('/opt/airflow')  # Add the parent directory of scripts/, not scripts/ itself
-from scripts.scrape_data import scrape
-from scripts.process_data import process
-from scripts.visualize_report import visualize
-
+sys.path.append('/opt/airflow')
+from scripts.create_table import create_table
+from scripts.scrape_data import scrape_data
+from scripts.process_data import process_data
+from scripts.visualize_report import fetch_from_kafka_and_store_to_postgres
+from scripts.send_email import send_email
 from datetime import timedelta, datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -11,29 +12,38 @@ from airflow.operators.python import PythonOperator
 default_args = {
     'owner': 'namvu',
     'retries': 5,
-    'retry_delay': timedelta(minutes=5)
+    'retry_delay': timedelta(minutes=30)
 }
 
 with DAG(
     default_args=default_args,
     dag_id='dag_for_jobs_market_etl',
     description='dag_for_jobs_market_etl',
-    start_date=datetime(2025, 4, 8),
+    start_date=datetime(2025, 4, 15),
     schedule_interval='@daily'
 ) as dag:
-    task_scrape = PythonOperator(
-        task_id='scrape',
-        python_callable=scrape,
+    create_table = PythonOperator(
+        task_id='create_table',
+        python_callable=create_table,
     )
 
-    task_process = PythonOperator(
-        task_id='process',
-        python_callable=process
+    scrape_data = PythonOperator(
+        task_id='scrape_data',
+        python_callable=scrape_data,
     )
 
-    task_visualize = PythonOperator(
-        task_id='visualize',
-        python_callable=visualize
+    process_data = PythonOperator(
+        task_id='process_data',
+        python_callable=process_data
     )
 
-    task_scrape >> task_process >> task_visualize
+    visualize_report = PythonOperator(
+        task_id='visualize_report',
+        python_callable=fetch_from_kafka_and_store_to_postgres
+    )
+    send_email = PythonOperator(
+        task_id='send_email',
+        python_callable=send_email
+    )
+
+    create_table >> scrape_data >> process_data >> visualize_report >> send_email

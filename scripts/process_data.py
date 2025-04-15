@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import min as _min, max as _max, avg, from_json, count, col, to_json, struct, when, filter, split, explode, trim, regexp_replace
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
-def process():
+def process_data():
     try:
         # Initialize SparkSession
         spark = (SparkSession.builder
@@ -166,4 +166,4 @@ def process():
     except Exception as e:
         print(e)
 
-process()
+process_data()
