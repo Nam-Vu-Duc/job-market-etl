@@ -56,12 +56,12 @@ python process_data.py
 5. Consume data and save to postgresql for superset visualization
 
 ```bash
-streamlit visualize_report.py
+python visualize_report.py
 ```
 
 6. Read data from postgres again to send email to user:
 ```bash
-streamlit send_email.py
+python send_email.py
 ```
 
 ### Demo
