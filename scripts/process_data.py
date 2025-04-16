@@ -165,5 +165,3 @@ def process_data():
 
     except Exception as e:
         print(e)
-
-process_data()

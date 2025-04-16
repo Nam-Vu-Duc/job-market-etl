@@ -1,3 +1,7 @@
+import os
+os.environ['UCD_CHROMEDRIVER_CACHE_DIR'] = '/tmp/uc_driver'
+os.environ["DISPLAY"] = ":99"
+os.environ["UCD_CHROMEDRIVER_USE_SUBPROCESS"] = "False"
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
@@ -13,17 +17,18 @@ import pandas as pd
 
 def create_chrome_options():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--headless=new")  # Run in headless mode
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument("--incognito")
+    chrome_options.add_argument("--disable-gpu")
     return chrome_options
 
 def delivery_report(err, msg):
     if err is not None:
-        print(f'Message delivery failed: {msg}')
+        print(f"Message delivery failed: {err}")
     else:
-        print(f'Message delivered to {msg.topic()}')
+        print(f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
 
 def insert_to_mysql(conn, cur, data) -> None:
     cur.executemany(
@@ -34,6 +39,7 @@ def insert_to_mysql(conn, cur, data) -> None:
         [tuple(row) for row in data.itertuples(index=False, name=None)]
     )
     conn.commit()
+    print(data)
     return
 
 def insert_to_kafka(producer, data) -> None:
@@ -51,7 +57,13 @@ def insert_to_kafka(producer, data) -> None:
 
 def get_job_from_top_cv(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
+    driver = uc.Chrome(
+        create_chrome_options(),
+        use_subprocess=False,
+        browser_executable_path="/usr/bin/google-chrome",
+        driver_executable_path="/tmp/chromedriver",  # explicitly define chromedriver
+        user_data_dir="/tmp/uc_user_data" # override home folder location
+    )
     driver.get('https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257')
 
     pagination = WebDriverWait(driver, 20).until(
@@ -168,7 +180,11 @@ def get_job_from_top_cv(conn, cur, producer) -> None:
 
 def get_job_from_career_link(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
+    driver = uc.Chrome(
+        create_chrome_options(),
+        use_subprocess=False,
+        browser_executable_path="/usr/bin/chromium-browser"
+    )
     driver.get('https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page=1')
     try:
         pagination = WebDriverWait(driver, 10).until(
@@ -275,7 +291,11 @@ def get_job_from_career_link(conn, cur, producer) -> None:
 
 def get_job_from_career_viet(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
+    driver = uc.Chrome(
+        create_chrome_options(),
+        use_subprocess=False,
+        browser_executable_path="/usr/bin/chromium-browser"
+    )
     driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-20-vi.html')
 
     try:
@@ -417,7 +437,11 @@ def get_job_from_career_viet(conn, cur, producer) -> None:
 
 def get_job_from_it_viec(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options(), use_subprocess=False)
+    driver = uc.Chrome(
+        create_chrome_options(),
+        use_subprocess=False,
+        browser_executable_path="/usr/bin/chromium-browser"
+    )
     driver.get('https://itviec.com/it-jobs?&page=20')
 
     try:
@@ -493,7 +517,11 @@ def get_job_from_it_viec(conn, cur, producer) -> None:
 
 def get_job_from_vietnam_works(conn, cur, producer) -> None:
     # get total pages
-    driver = uc.Chrome(create_chrome_options())
+    driver = uc.Chrome(
+        create_chrome_options(),
+        use_subprocess=False,
+        browser_executable_path="/usr/bin/google-chrome"
+    )
     driver.get('https://www.vietnamworks.com/viec-lam?g=5&page=1')
 
     try:
@@ -593,19 +621,19 @@ def scrape_data():
     producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
     try:
         conn = mysql.connector.connect(
-            host="localhost",
+            host="host.docker.internal",
             user="root",
             password="root"
         )
         cur = conn.cursor()
 
+        print("Cache dir:", os.environ.get('UCD_CHROMEDRIVER_CACHE_DIR'))
+
         get_job_from_top_cv(conn, cur, producer)
-        get_job_from_career_link(conn, cur, producer)
-        get_job_from_career_viet(conn, cur, producer)
-        get_job_from_it_viec(conn, cur, producer)
+        # get_job_from_career_link(conn, cur, producer)
+        # get_job_from_career_viet(conn, cur, producer)
+        # get_job_from_it_viec(conn, cur, producer)
         # get_job_from_vietnam_works(conn, cur, 1)
 
     except Exception as e:
         print(e)
-
-scrape_data()
