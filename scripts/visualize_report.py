@@ -128,5 +128,3 @@ def fetch_from_kafka_and_store_to_postgres():
     finally:
         consumer.close()
         return
-
-fetch_from_kafka_and_store_to_postgres()

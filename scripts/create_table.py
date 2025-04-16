@@ -77,5 +77,3 @@ def create_postgres_tables():
 def create_table():
     create_mysql_tables()
     create_postgres_tables()
-
-create_table()
