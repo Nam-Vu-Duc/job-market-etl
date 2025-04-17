@@ -3,9 +3,17 @@ FROM apache/airflow:2.10.5-python3.9
 # Switch to root user to install system dependencies
 USER root
 
+# Adding Spark + Java
+RUN apt-get update && \
+    apt-get install -y openjdk-17-jdk curl && \
+    mkdir -p /opt && \
+    curl -fL https://dlcdn.apache.org/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz | tar -zx -C /opt && \
+    ln -s /opt/spark-3.5.5-bin-hadoop3 /opt/spark
+
 # Set JAVA_HOME environment variable for Spark
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$PATH:$JAVA_HOME/bin
+ENV SPARK_HOME=/opt/spark
 
 # Install Chrome and ChromeDriver dependencies
 RUN apt-get update && apt-get install -y \

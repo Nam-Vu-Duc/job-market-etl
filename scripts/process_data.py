@@ -1,11 +1,15 @@
+import os
+os.environ['JAVA_HOME'] = '/usr/lib/jvm/java-17-openjdk-amd64'
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import min as _min, max as _max, avg, from_json, count, col, to_json, struct, when, filter, split, explode, trim, regexp_replace
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
 def process_data():
+    print("JAVA_HOME:", os.environ.get("JAVA_HOME"))
     try:
         # Initialize SparkSession
         spark = (SparkSession.builder
+            .master("local[*]")
             .appName("JobMarket")
             .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0")  # Spark-Kafka integration
             .config("spark.driver.extraClassPath", "C:/Users/admin/PycharmProjects/PythonProject/postgresql-42.7.5.jar")  # PostgresSQL driver
@@ -28,7 +32,7 @@ def process_data():
         # Read data from Kafka 'jobs_topics'
         jobs_df = (spark.readStream
             .format("kafka")
-            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("kafka.bootstrap.servers", "broker:29092")
             .option("subscribe", "jobs-topic")
             .option("startingOffsets", "earliest")
             .load()
@@ -125,9 +129,9 @@ def process_data():
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
-            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("kafka.bootstrap.servers", "broker:29092")
             .option("topic", "address_report")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint2")
+            .option("checkpointLocation", "/opt/airflow/checkpoints/checkpoint2")
             .outputMode("update")
             .start()
         )
@@ -138,9 +142,9 @@ def process_data():
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
-            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("kafka.bootstrap.servers", "broker:29092")
             .option("topic", "source_report")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint3")
+            .option("checkpointLocation", "/opt/airflow/checkpoints/checkpoint3")
             .outputMode("update")
             .start()
         )
@@ -151,9 +155,9 @@ def process_data():
             .writeStream
             .format("kafka")
             .option("failOnDataLoss", "false")
-            .option("kafka.bootstrap.servers", "localhost:9092")
+            .option("kafka.bootstrap.servers", "broker:29092")
             .option("topic", "exp_report")
-            .option("checkpointLocation", "C:/Users/admin/PycharmProjects/webScraping/checkpoints/checkpoint4")
+            .option("checkpointLocation", "/opt/airflow/checkpoints/checkpoint4")
             .outputMode("update")
             .start()
         )
