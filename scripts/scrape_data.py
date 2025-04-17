@@ -618,7 +618,7 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
     return
 
 def scrape_data():
-    producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
+    producer = SerializingProducer({'bootstrap.servers': 'broker:29092'})
     try:
         conn = mysql.connector.connect(
             host="host.docker.internal",

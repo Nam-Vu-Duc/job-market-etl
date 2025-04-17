@@ -5,7 +5,7 @@ from confluent_kafka import Consumer, SerializingProducer, KafkaError
 
 # config kafka consumer
 conf = {
-    'bootstrap.servers': 'localhost:9092',
+    'bootstrap.servers': 'broker:29092',
     'group.id': 'jobs-group',
     'auto.offset.reset': 'earliest',
     'enable.auto.commit': False

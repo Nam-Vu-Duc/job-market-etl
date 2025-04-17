@@ -18,7 +18,7 @@ default_args = {
 with DAG(
     default_args=default_args,
     dag_id='dag_for_jobs_market_etl',
-    description='fixing_deni_chromedriver_#9',
+    description='fixing_spark_#9',
     start_date=datetime(2025, 4, 16),
     # schedule_interval='@daily'
 ) as dag:
@@ -26,17 +26,17 @@ with DAG(
     #     task_id='create_table',
     #     python_callable=create_table,
     # )
+    #
+    # scrape_data = PythonOperator(
+    #     task_id='scrape_data',
+    #     python_callable=scrape_data,
+    # )
 
-    scrape_data = PythonOperator(
-        task_id='scrape_data',
-        python_callable=scrape_data,
+    process_data = PythonOperator(
+        task_id='process_data',
+        python_callable=process_data
     )
 
-    # process_data = PythonOperator(
-    #     task_id='process_data',
-    #     python_callable=process_data
-    # )
-    #
     # visualize_report = PythonOperator(
     #     task_id='visualize_report',
     #     python_callable=fetch_from_kafka_and_store_to_postgres
