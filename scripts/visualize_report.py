@@ -3,28 +3,7 @@ import time
 import json
 from confluent_kafka import Consumer, SerializingProducer, KafkaError
 
-# config kafka consumer
-conf = {
-    'bootstrap.servers': 'broker:29092',
-    'group.id': 'jobs-group',
-    'auto.offset.reset': 'earliest',
-    'enable.auto.commit': False
-}
-topics = ['address_report', 'source_report', 'exp_report']
-consumer = Consumer(conf)
-consumer.subscribe(topics)
-
-# config postgres connect
-conn = psycopg2.connect(
-    dbname="postgres",
-    user="postgres",
-    password="root",
-    host="host.docker.internal",
-    port="5432"
-)
-cur = conn.cursor()
-
-def store_address_data_to_postgres(address_data):
+def store_address_data_to_postgres(address_data, cur, conn):
     print('Start storing address data to postgres')
     try:
         # insert to address_report table
@@ -51,7 +30,7 @@ def store_address_data_to_postgres(address_data):
     except Exception as e:
         print(e)
 
-def store_source_data_to_postgres(source_data):
+def store_source_data_to_postgres(source_data, cur, conn):
     print('Start storing source data to postgres')
     try:
         # insert to source_report table
@@ -78,7 +57,7 @@ def store_source_data_to_postgres(source_data):
     except Exception as e:
         print(e)
 
-def store_exp_data_to_postgres(exp_data):
+def store_exp_data_to_postgres(exp_data, cur, conn):
     print('Start storing exp data to postgres')
     try:
         # insert to exp_report table
@@ -106,6 +85,31 @@ def store_exp_data_to_postgres(exp_data):
         print(e)
 
 def fetch_from_kafka_and_store_to_postgres():
+    print('Start running')
+
+    # config kafka consumer
+    conf = {
+        'bootstrap.servers': 'broker:29092',
+        'group.id': 'jobs-group',
+        'auto.offset.reset': 'earliest',
+        'enable.auto.commit': False
+    }
+    topics = ['address_report', 'source_report', 'exp_report']
+    consumer = Consumer(conf)
+    consumer.subscribe(topics)
+    print('config kafka consumer')
+
+    # config postgres connect
+    conn = psycopg2.connect(
+        dbname="postgres",
+        user="postgres",
+        password="root",
+        host="host.docker.internal",
+        port="5432"
+    )
+    cur = conn.cursor()
+    print('config postgres connect')
+
     try:
         while True:
             msg = consumer.poll(2.0)  # Wait up to 1 second
@@ -115,16 +119,18 @@ def fetch_from_kafka_and_store_to_postgres():
                 print("Error:", msg.error())
             else:
                 data = json.loads(msg.value().decode('utf-8'))
+                print(data)
                 if msg.topic() == 'address_report':
-                    store_address_data_to_postgres(data)
+                    store_address_data_to_postgres(data, cur, conn)
                 elif msg.topic() == 'source_report':
-                    store_source_data_to_postgres(data)
+                    store_source_data_to_postgres(data, cur, conn)
                 else:
-                    store_exp_data_to_postgres(data)
+                    store_exp_data_to_postgres(data, cur, conn)
 
     except KeyboardInterrupt:
         print("Stopped.")
 
     finally:
         consumer.close()
-        return
+
+    return

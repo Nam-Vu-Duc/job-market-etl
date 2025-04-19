@@ -25,7 +25,7 @@ def fetch_from_mysql():
         where query_day = %s
     """, ((time.strftime("%Y-%m-%d")),)
     )
-    total_jobs = cur.fetchone()
+    total_jobs = cur.fetchone()[0]
 
     cur.execute(
         """
@@ -70,6 +70,6 @@ def send_email():
 
     context = ssl.create_default_context()
 
-    # with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
-    #     smtp.login(sender, password)
-    #     smtp.sendmail(sender, receiver, em.as_string())
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+        smtp.login(sender, password)
+        smtp.sendmail(sender, receiver, em.as_string())
