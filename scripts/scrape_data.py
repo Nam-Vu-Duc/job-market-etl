@@ -14,6 +14,7 @@ import mysql.connector
 import time
 import math
 import pandas as pd
+import shutil
 
 def create_chrome_options():
     chrome_options = Options()
@@ -57,460 +58,487 @@ def insert_to_kafka(producer, data) -> None:
 
 def get_job_from_top_cv(conn, cur, producer) -> None:
     # get total pages
+    shutil.rmtree("/tmp/uc_user_data", ignore_errors=True)
     driver = uc.Chrome(
         create_chrome_options(),
         use_subprocess=False,
         browser_executable_path="/usr/bin/google-chrome",
         driver_executable_path="/tmp/chromedriver",  # explicitly define chromedriver
-        user_data_dir="/tmp/uc_user_data" # override home folder location
+        user_data_dir="/tmp/uc_user_data"  # override home folder location
     )
-    driver.get('https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257')
-
-    pagination = WebDriverWait(driver, 20).until(
-        ec.presence_of_element_located((By.ID, 'job-listing-paginate-text'))
-    )
-    total_page = int(pagination.text.split()[2])
-
-    for i in range(1, total_page+1):
-        # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 20).until(
-            ec.presence_of_element_located((By.CLASS_NAME, 'job-list-search-result'))
+    try:
+        driver.get('https://www.topcv.vn/tim-viec-lam-cong-nghe-thong-tin-cr257')
+        pagination = WebDriverWait(driver, 20).until(
+            ec.presence_of_element_located((By.ID, 'job-listing-paginate-text'))
         )
-        job_lists = job_lists_container.find_elements(By.CLASS_NAME, 'job-item-search-result')
+        total_page = int(pagination.text.split()[2])
 
-        # query each job in each page
-        data = []
-        for job in job_lists:
-            try:
-                position = job.find_element(By.CSS_SELECTOR, "h3.title a span").text.strip()
-            except NoSuchElementException:
-                position = "Not Available"
+        for i in range(1, total_page+1):
+            # get job elements, use presence_of_element_located to await til the element appears
+            job_lists_container = WebDriverWait(driver, 20).until(
+                ec.presence_of_element_located((By.CLASS_NAME, 'job-list-search-result'))
+            )
+            job_lists = job_lists_container.find_elements(By.CLASS_NAME, 'job-item-search-result')
 
-            try:
-                company = job.find_element(By.CSS_SELECTOR, "a.company span.company-name").text.strip()
-            except NoSuchElementException:
-                company = "Not Available"
+            # query each job in each page
+            data = []
+            for job in job_lists:
+                try:
+                    position = job.find_element(By.CSS_SELECTOR, "h3.title a span").text.strip()
+                except NoSuchElementException:
+                    position = "Not Available"
 
-            try:
-                salary = job.find_element(By.CSS_SELECTOR, "label.title-salary").text.strip()
-            except NoSuchElementException:
-                salary = "Not Available"
+                try:
+                    company = job.find_element(By.CSS_SELECTOR, "a.company span.company-name").text.strip()
+                except NoSuchElementException:
+                    company = "Not Available"
 
-            try:
-                address = job.find_element(By.CSS_SELECTOR, "label.address span").text.strip()
-            except NoSuchElementException:
-                address = "Not Available"
+                try:
+                    salary = job.find_element(By.CSS_SELECTOR, "label.title-salary").text.strip()
+                except NoSuchElementException:
+                    salary = "Not Available"
 
-            try:
-                exp = job.find_element(By.CSS_SELECTOR, "label.exp span").text.strip()
-            except NoSuchElementException:
-                exp = "Not Available"
+                try:
+                    address = job.find_element(By.CSS_SELECTOR, "label.address span").text.strip()
+                except NoSuchElementException:
+                    address = "Not Available"
 
-            data.append([position, company, salary, address, exp])
+                try:
+                    exp = job.find_element(By.CSS_SELECTOR, "label.exp span").text.strip()
+                except NoSuchElementException:
+                    exp = "Not Available"
 
-        # next page
-        driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[2].click()
-        time.sleep(2)
+                data.append([position, company, salary, address, exp])
 
-        data = pd.DataFrame(data)
-        data.columns = ['position', 'company', 'salary', 'address', 'exp']
+            # next page
+            driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[2].click()
+            time.sleep(2)
 
-        # Ensure salary column is a string and stripped of leading/trailing spaces
-        data['salary'] = data['salary'].astype(str).str.strip()
-        data['exp']    = data['exp'].astype(str).str.strip()
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address', 'exp']
 
-        # Initialize columns
-        data['source']     = 'topcv'
-        data['query_day']  = time.strftime("%Y-%m-%d")
-        data['min_salary'] = 0.0
-        data['max_salary'] = 0.0
-        data['final_exp']  = 0
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
+            data['exp']    = data['exp'].astype(str).str.strip()
 
-        # CLEAN EXPERIENCE
-        # Case 1: 'ko yeu cau' -> 0
-        # Case 2: ' X năm'
-        condition = data['exp'].str.contains('năm')
-        data.loc[condition, 'final_exp'] = (
-            data.loc[condition, 'exp']
-            .str.split().str[-2]
-            .astype(int)
-        )
+            # Initialize columns
+            data['source']     = 'topcv'
+            data['query_day']  = time.strftime("%Y-%m-%d")
+            data['min_salary'] = 0.0
+            data['max_salary'] = 0.0
+            data['final_exp']  = 0
 
-        # delete column exp
-        data = data.drop('exp', axis=1)
+            # CLEAN EXPERIENCE
+            # Case 1: 'ko yeu cau' -> 0
+            # Case 2: ' X năm'
+            condition = data['exp'].str.contains('năm')
+            data.loc[condition, 'final_exp'] = (
+                data.loc[condition, 'exp']
+                .str.split().str[-2]
+                .astype(int)
+            )
 
-        # CLEAN SALARY
-        # Case 1: 'Thoả thuận' → min = max = 0
-        # Case 2: 'Tới X USD' or 'Tới X triệu'
-        condition = data['salary'].str.startswith('Tới')
-        is_usd = data['salary'].str.contains('USD', na=False)
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.split().str[1].str
-            .replace(',', '').astype(float)
-        )
-        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+            # delete column exp
+            data = data.drop('exp', axis=1)
 
-        # Case 3: 'X - Y USD' or 'X - Y triệu'
-        condition = data['salary'].str.contains('-')
-        data.loc[condition, 'min_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '')
-            .str.split(' - ')
-            .str[0].astype(float)
-        )
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '')
-            .str.split(' - ').str[1]
-            .str.split().str[0]
-            .astype(float)
-        )
-        data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+            # CLEAN SALARY
+            # Case 1: 'Thoả thuận' → min = max = 0
+            # Case 2: 'Tới X USD' or 'Tới X triệu'
+            condition = data['salary'].str.startswith('Tới')
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.split().str[1].str
+                .replace(',', '').astype(float)
+            )
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-        # delete column salary
-        data = data.drop('salary', axis=1)
+            # Case 3: 'X - Y USD' or 'X - Y triệu'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '')
+                .str.split(' - ')
+                .str[0].astype(float)
+            )
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '')
+                .str.split(' - ').str[1]
+                .str.split().str[0]
+                .astype(float)
+            )
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
-        insert_to_mysql(conn, cur, data)
-        insert_to_kafka(producer, data)
+            # delete column salary
+            data = data.drop('salary', axis=1)
+
+            insert_to_mysql(conn, cur, data)
+            insert_to_kafka(producer, data)
+
+
+    except Exception as e:
+        print(f"[ERROR]: {e}")
 
     driver.quit()
     return
 
 def get_job_from_career_link(conn, cur, producer) -> None:
     # get total pages
+    shutil.rmtree("/tmp/uc_user_data", ignore_errors=True)
     driver = uc.Chrome(
         create_chrome_options(),
         use_subprocess=False,
-        browser_executable_path="/usr/bin/chromium-browser"
+        browser_executable_path="/usr/bin/google-chrome",
+        driver_executable_path="/tmp/chromedriver",  # explicitly define chromedriver
+        user_data_dir="/tmp/uc_user_data"  # override home folder location
     )
-    driver.get('https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page=1')
     try:
-        pagination = WebDriverWait(driver, 10).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'ul.pagination'))
-        )
-    except (TimeoutException, NoSuchElementException):
-        pagination = None
+        driver.get('https://www.careerlink.vn/vieclam/tim-kiem-viec-lam?category_ids=130%2C19&page=1')
+        try:
+            pagination = WebDriverWait(driver, 10).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'ul.pagination'))
+            )
+        except (TimeoutException, NoSuchElementException):
+            pagination = None
 
-    if pagination:
-        li_list = pagination.find_elements(By.CSS_SELECTOR, 'li')
-        total_page = int(li_list[-2].text)
-    else:
-        total_page = 1
+        if pagination:
+            li_list = pagination.find_elements(By.CSS_SELECTOR, 'li')
+            total_page = int(li_list[-2].text)
+        else:
+            total_page = 1
 
-    for i in range(1, total_page):
-        # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 50).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'ul.list-group.mt-4'))
-        )
-        job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.media-body.overflow-hidden")
+        for i in range(1, total_page+1):
+            # get job elements, use presence_of_element_located to await til the element appears
+            job_lists_container = WebDriverWait(driver, 50).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'ul.list-group.mt-4'))
+            )
+            job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.media-body.overflow-hidden")
 
-        # query each job in each page
-        data = []
-        for job in job_lists:
-            try:
-                position = job.find_element(By.CSS_SELECTOR, "h5.job-name").text.strip()
-            except NoSuchElementException:
-                position = "Not Available"
+            # query each job in each page
+            data = []
+            for job in job_lists:
+                try:
+                    position = job.find_element(By.CSS_SELECTOR, "h5.job-name").text.strip()
+                except NoSuchElementException:
+                    position = "Not Available"
 
-            try:
-                company = job.find_element(By.CSS_SELECTOR, "a.text-dark").text.strip()
-            except NoSuchElementException:
-                company = "Not Available"
+                try:
+                    company = job.find_element(By.CSS_SELECTOR, "a.text-dark").text.strip()
+                except NoSuchElementException:
+                    company = "Not Available"
 
-            try:
-                salary = job.find_element(By.CSS_SELECTOR, "span.job-salary").text.strip()
-            except NoSuchElementException:
-                salary = "Not Available"
+                try:
+                    salary = job.find_element(By.CSS_SELECTOR, "span.job-salary").text.strip()
+                except NoSuchElementException:
+                    salary = "Not Available"
 
-            try:
-                address = job.find_element(By.CSS_SELECTOR, "div.job-location div a").text.strip()
-            except NoSuchElementException:
-                address = "Not Available"
+                try:
+                    address = job.find_element(By.CSS_SELECTOR, "div.job-location div a").text.strip()
+                except NoSuchElementException:
+                    address = "Not Available"
 
-            data.append([position, company, salary, address])
+                data.append([position, company, salary, address])
 
-        # next page
-        driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
-        time.sleep(5)
+            # next page
+            driver.find_element(By.CSS_SELECTOR, 'ul.pagination').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
+            time.sleep(5)
 
-        data = pd.DataFrame(data)
-        data.columns = ['position', 'company', 'salary', 'address']
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
 
-        # Ensure salary column is a string and stripped of leading/trailing spaces
-        data['salary'] = data['salary'].astype(str).str.strip()
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
 
-        # Initialize columns
-        data['source']      = 'careerlink'
-        data['query_day']   = time.strftime("%Y-%m-%d")
-        data['min_salary']  = 0.0
-        data['max_salary']  = 0.0
-        data['final_exp']   = 0
+            # Initialize columns
+            data['source']      = 'careerlink'
+            data['query_day']   = time.strftime("%Y-%m-%d")
+            data['min_salary']  = 0.0
+            data['max_salary']  = 0.0
+            data['final_exp']   = 0
 
-        # CLEAN SALARY
-        # Case 1: 'Thương lượng' or 'Cạnh tranh'
-        # Case 2: 'X triệu' or 'Trên X triệu'
-        condition = data['salary'].str.contains('triệu', na=False) & ~data['salary'].str.contains('-', na=False)
-        is_usd = data['salary'].str.contains('USD', na=False)
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '', regex=True)
-            .str.split()
-            .apply(lambda x: float(x[0]) if len(x) == 2 else float(x[1]))
-        ) # check if X triệu or Trên X triệu by its length
-        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+            # CLEAN SALARY
+            # Case 1: 'Thương lượng' or 'Cạnh tranh'
+            # Case 2: 'X triệu' or 'Trên X triệu'
+            condition = data['salary'].str.contains('triệu', na=False) & ~data['salary'].str.contains('-', na=False)
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '', regex=True)
+                .str.split()
+                .apply(lambda x: float(x[0]) if len(x) == 2 else float(x[1]))
+            ) # check if X triệu or Trên X triệu by its length
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-        # Case 3: 'X triệu - Y triệu' or 'X USD - Y USD'
-        condition = data['salary'].str.contains('-')
-        data.loc[condition, 'min_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '', regex=True)
-            .str.split(' - ').str[0]
-            .str.split().str[0]
-            .astype(float)
-        )
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '', regex=True)
-            .str.split(' - ').str[1]
-            .str.split().str[0]
-            .astype(float)
-        )
-        data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
+            # Case 3: 'X triệu - Y triệu' or 'X USD - Y USD'
+            condition = data['salary'].str.contains('-')
+            data.loc[condition, 'min_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '', regex=True)
+                .str.split(' - ').str[0]
+                .str.split().str[0]
+                .astype(float)
+            )
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '', regex=True)
+                .str.split(' - ').str[1]
+                .str.split().str[0]
+                .astype(float)
+            )
+            data.loc[condition & is_usd, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
-        # delete column salary
-        data = data.drop('salary', axis=1)
+            # delete column salary
+            data = data.drop('salary', axis=1)
 
-        insert_to_mysql(conn, cur, data)
-        insert_to_kafka(producer, data)
+            insert_to_mysql(conn, cur, data)
+            insert_to_kafka(producer, data)
+
+
+    except Exception as e:
+        print(f"[ERROR] Something went wrong: {e}")
 
     driver.quit()
     return
 
 def get_job_from_career_viet(conn, cur, producer) -> None:
     # get total pages
+    shutil.rmtree("/tmp/uc_user_data", ignore_errors=True)
     driver = uc.Chrome(
         create_chrome_options(),
         use_subprocess=False,
-        browser_executable_path="/usr/bin/chromium-browser"
+        browser_executable_path="/usr/bin/google-chrome",
+        driver_executable_path="/tmp/chromedriver",  # explicitly define chromedriver
+        user_data_dir="/tmp/uc_user_data"  # override home folder location
     )
-    driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-20-vi.html')
-
     try:
-        pagination = WebDriverWait(driver, 10).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'div.job-found-amout h1'))
-        )
-    except (TimeoutException, NoSuchElementException):
-        pagination = None
+        driver.get('https://careerviet.vn/viec-lam/cntt-phan-cung-mang-cntt-phan-mem-c63,1-trang-1-vi.html')
 
-    if pagination.text:
-        total_page = math.ceil(int(pagination.text.split()[0])/50)
-    else:
-        total_page = 1
+        try:
+            pagination = WebDriverWait(driver, 10).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'div.job-found-amout h1'))
+            )
+        except (TimeoutException, NoSuchElementException):
+            pagination = None
 
-    # get jobs each page
-    for i in range(20, total_page+1):
-        # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 50).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'div.jobs-side-list'))
-        )
-        time.sleep(2)
-        job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.figcaption")
+        if pagination.text:
+            total_page = math.ceil(int(pagination.text.split()[0])/50)
+        else:
+            total_page = 1
 
-        # query each job in each page
-        data = []
-        for job in job_lists:
-            try:
-                position = job.find_element(By.CSS_SELECTOR, "h2 a").text.strip()
-            except NoSuchElementException:
-                position = "Not Available"
+        # get jobs each page
+        for i in range(1, total_page+1):
+            # get job elements, use presence_of_element_located to await til the element appears
+            job_lists_container = WebDriverWait(driver, 50).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'div.jobs-side-list'))
+            )
+            time.sleep(2)
+            job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.figcaption")
 
-            try:
-                company = job.find_element(By.CSS_SELECTOR, "a.company-name").text.strip()
-            except NoSuchElementException:
-                company = "Not Available"
+            # query each job in each page
+            data = []
+            for job in job_lists:
+                try:
+                    position = job.find_element(By.CSS_SELECTOR, "h2 a").text.strip()
+                except NoSuchElementException:
+                    position = "Not Available"
 
-            try:
-                salary = job.find_element(By.CSS_SELECTOR, "div.salary p").text.strip()
-            except NoSuchElementException:
-                salary = "Not Available"
+                try:
+                    company = job.find_element(By.CSS_SELECTOR, "a.company-name").text.strip()
+                except NoSuchElementException:
+                    company = "Not Available"
 
-            try:
-                address = job.find_element(By.CSS_SELECTOR, "div.location ul").text.strip()
-            except NoSuchElementException:
-                address = "Not Available"
+                try:
+                    salary = job.find_element(By.CSS_SELECTOR, "div.salary p").text.strip()
+                except NoSuchElementException:
+                    salary = "Not Available"
 
-            data.append([position, company, salary, address])
+                try:
+                    address = job.find_element(By.CSS_SELECTOR, "div.location ul").text.strip()
+                except NoSuchElementException:
+                    address = "Not Available"
 
-        # next page
-        driver.find_element(By.CSS_SELECTOR, 'div.pagination ul').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
-        time.sleep(2)
+                data.append([position, company, salary, address])
 
-        data = pd.DataFrame(data)
-        data.columns = ['position', 'company', 'salary', 'address']
+            # next page
+            driver.find_element(By.CSS_SELECTOR, 'div.pagination ul').find_elements(By.CSS_SELECTOR, 'li')[-1].click()
+            time.sleep(2)
 
-        # Ensure salary column is a string and stripped of leading/trailing spaces
-        data['salary'] = data['salary'].astype(str).str.strip()
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
 
-        # Initialize columns
-        data['source']      = 'careerviet'
-        data['query_day']   = time.strftime("%Y-%m-%d")
-        data['min_salary']  = 0.0
-        data['max_salary']  = 0.0
-        data['final_exp']   = 0
+            # Ensure salary column is a string and stripped of leading/trailing spaces
+            data['salary'] = data['salary'].astype(str).str.strip()
 
-        # CLEAN SALARY
-        # Case 1: 'Cạnh tranh'
-        # Case 2: 'Lương: Trên X Tr VND'
-        condition = data['salary'].str.contains('Trên', na=False) & ~data['salary'].str.contains('-', na=False)
-        is_usd = data['salary'].str.contains('USD', na=False)
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '', regex=True)
-            .str.split(':').str[1]
-            .str.split().str[1]
-            .astype(float)
-        )
-        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+            # Initialize columns
+            data['source']      = 'careerviet'
+            data['query_day']   = time.strftime("%Y-%m-%d")
+            data['min_salary']  = 0.0
+            data['max_salary']  = 0.0
+            data['final_exp']   = 0
 
-        # Case 3: 'Lương: Lên đến X Tr VND'
-        condition = data['salary'].str.contains('Lên đến', na=False)
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.replace(',', '', regex=True)
-            .str.split(':').str[1]
-            .str.split().str[2]
-            .astype(float)
-        )
-        data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
-        data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
+            # CLEAN SALARY
+            # Case 1: 'Cạnh tranh'
+            # Case 2: 'Lương: Trên X Tr VND'
+            condition = data['salary'].str.contains('Trên', na=False) & ~data['salary'].str.contains('-', na=False)
+            is_usd = data['salary'].str.contains('USD', na=False)
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '', regex=True)
+                .str.split(':').str[1]
+                .str.split().str[1]
+                .astype(float)
+            )
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-        # Case 3: 'Lương: X Tr - Y Tr VND'
-        condition = data['salary'].str.contains('-') & data['salary'].str.contains('Tr')
-        data.loc[condition, 'min_salary'] = (
-            data.loc[condition, 'salary']
-            .str.split(':').str[1]
-            .str.replace(',', '')
-            .str.split(' - ').str[0]
-            .str.split().str[0]
-            .astype(float)
-        )
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.split(':').str[1]
-            .str.replace(',', '')
-            .str.split(' - ').str[1]
-            .str.split().str[0]
-            .astype(float)
-        )
+            # Case 3: 'Lương: Lên đến X Tr VND'
+            condition = data['salary'].str.contains('Lên đến', na=False)
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.replace(',', '', regex=True)
+                .str.split(':').str[1]
+                .str.split().str[2]
+                .astype(float)
+            )
+            data.loc[condition & is_usd, 'max_salary'] *= 25000 / 1000000  # Convert USD to VND
+            data.loc[condition & is_usd & (data['max_salary'] > 100), 'max_salary'] //= 12
 
-        # CASE 4: 'Lương: X - Y USD'
-        condition = data['salary'].str.contains('-') & data['salary'].str.contains('USD')
-        data.loc[condition, 'min_salary'] = (
-            data.loc[condition, 'salary']
-            .str.split(':').str[1]
-            .str.replace(',', '')
-            .str.split(' - ').str[0]
-            .astype(float)
-        )
-        data.loc[condition, 'max_salary'] = (
-            data.loc[condition, 'salary']
-            .str.split(':').str[1]
-            .str.replace(',', '')
-            .str.split(' - ').str[1]
-            .str.split().str[0]
-            .astype(float)
-        )
-        data.loc[condition, ['min_salary', 'max_salary']] *= 25000 / 1000000
+            # Case 3: 'Lương: X Tr - Y Tr VND'
+            condition = data['salary'].str.contains('-') & data['salary'].str.contains('Tr')
+            data.loc[condition, 'min_salary'] = (
+                data.loc[condition, 'salary']
+                .str.split(':').str[1]
+                .str.replace(',', '')
+                .str.split(' - ').str[0]
+                .str.split().str[0]
+                .astype(float)
+            )
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.split(':').str[1]
+                .str.replace(',', '')
+                .str.split(' - ').str[1]
+                .str.split().str[0]
+                .astype(float)
+            )
 
-        # delete column salary
-        data = data.drop('salary', axis=1)
+            # CASE 4: 'Lương: X - Y USD'
+            condition = data['salary'].str.contains('-') & data['salary'].str.contains('USD')
+            data.loc[condition, 'min_salary'] = (
+                data.loc[condition, 'salary']
+                .str.split(':').str[1]
+                .str.replace(',', '')
+                .str.split(' - ').str[0]
+                .astype(float)
+            )
+            data.loc[condition, 'max_salary'] = (
+                data.loc[condition, 'salary']
+                .str.split(':').str[1]
+                .str.replace(',', '')
+                .str.split(' - ').str[1]
+                .str.split().str[0]
+                .astype(float)
+            )
+            data.loc[condition, ['min_salary', 'max_salary']] *= 25000 / 1000000
 
-        insert_to_mysql(conn, cur, data)
-        insert_to_kafka(producer, data)
+            # delete column salary
+            data = data.drop('salary', axis=1)
+
+            insert_to_mysql(conn, cur, data)
+            insert_to_kafka(producer, data)
+
+    except Exception as e:
+        print(f"[ERROR] Something went wrong: {e}")
 
     driver.quit()
     return
 
 def get_job_from_it_viec(conn, cur, producer) -> None:
     # get total pages
+    shutil.rmtree("/tmp/uc_user_data", ignore_errors=True)
     driver = uc.Chrome(
         create_chrome_options(),
         use_subprocess=False,
-        browser_executable_path="/usr/bin/chromium-browser"
+        browser_executable_path="/usr/bin/google-chrome",
+        driver_executable_path="/tmp/chromedriver",  # explicitly define chromedriver
+        user_data_dir="/tmp/uc_user_data"  # override home folder location
     )
-    driver.get('https://itviec.com/it-jobs?&page=20')
-
     try:
-        pagination = WebDriverWait(driver, 10).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'nav.ipagination.imt-10'))
-        )
-    except (TimeoutException, NoSuchElementException):
-        pagination = None
+        driver.get('https://itviec.com/it-jobs?&page=1')
+        try:
+            pagination = WebDriverWait(driver, 10).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'nav.ipagination.imt-10'))
+            )
+        except (TimeoutException, NoSuchElementException):
+            pagination = None
 
-    if pagination:
-        li_list = pagination.find_elements(By.CSS_SELECTOR, 'div.page')
-        total_page = int(li_list[-2].text)
-    else:
-        total_page = 1
+        if pagination:
+            li_list = pagination.find_elements(By.CSS_SELECTOR, 'div.page')
+            total_page = int(li_list[-2].text)
+        else:
+            total_page = 1
 
-    # get jobs each page
-    for i in range(20, total_page):
-        # get job elements, use presence_of_element_located to await til the element appears
-        job_lists_container = WebDriverWait(driver, 50).until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, 'div.col-xl-5.card-jobs-list.ips-0.ipe-0.ipe-xl-6'))
-        )
-        job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.job-card")
+        # get jobs each page
+        for i in range(1, total_page+1):
+            # get job elements, use presence_of_element_located to await til the element appears
+            job_lists_container = WebDriverWait(driver, 50).until(
+                ec.presence_of_element_located((By.CSS_SELECTOR, 'div.col-xl-5.card-jobs-list.ips-0.ipe-0.ipe-xl-6'))
+            )
+            job_lists = job_lists_container.find_elements(By.CSS_SELECTOR, "div.job-card")
 
-        # query each job in each page
-        data = []
-        for job in job_lists:
-            try:
-                position = job.find_element(By.CSS_SELECTOR, "h3.imt-3").text.strip()
-            except NoSuchElementException:
-                position = "Not Available"
+            # query each job in each page
+            data = []
+            for job in job_lists:
+                try:
+                    position = job.find_element(By.CSS_SELECTOR, "h3.imt-3").text.strip()
+                except NoSuchElementException:
+                    position = "Not Available"
 
-            try:
-                company = job.find_element(By.CSS_SELECTOR, "span.ims-2.small-text.text-hover-underline a").text.strip()
-            except NoSuchElementException:
-                company = "Not Available"
+                try:
+                    company = job.find_element(By.CSS_SELECTOR, "span.ims-2.small-text.text-hover-underline a").text.strip()
+                except NoSuchElementException:
+                    company = "Not Available"
 
-            try:
-                salary = job.find_element(By.CSS_SELECTOR, "div.d-flex.align-items-center.salary.text-rich-grey a").text.strip()
-            except NoSuchElementException:
-                salary = "Not Available"
+                try:
+                    salary = job.find_element(By.CSS_SELECTOR, "div.d-flex.align-items-center.salary.text-rich-grey a").text.strip()
+                except NoSuchElementException:
+                    salary = "Not Available"
 
-            try:
-                address = job.find_elements(By.CSS_SELECTOR, "span.ips-2.small-text.text-rich-grey")[1].text.strip()
-            except NoSuchElementException:
-                address = "Not Available"
+                try:
+                    address = job.find_elements(By.CSS_SELECTOR, "span.ips-2.small-text.text-rich-grey")[1].text.strip()
+                except NoSuchElementException:
+                    address = "Not Available"
 
-            data.append([position, company, salary, address])
+                data.append([position, company, salary, address])
 
-        # next page
-        driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
-        time.sleep(5)
-        driver.find_element(By.CSS_SELECTOR, 'div.pagination-search-jobs nav.ipagination').find_element(By.CSS_SELECTOR, 'div.page.next').click()
-        time.sleep(5)
+            # next page
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
+            time.sleep(5)
+            driver.find_element(By.CSS_SELECTOR, 'div.pagination-search-jobs nav.ipagination').find_element(By.CSS_SELECTOR, 'div.page.next').click()
+            time.sleep(5)
 
-        data = pd.DataFrame(data)
-        data.columns = ['position', 'company', 'salary', 'address']
+            data = pd.DataFrame(data)
+            data.columns = ['position', 'company', 'salary', 'address']
 
-        # Initialize columns
-        data['source']      = 'itviec'
-        data['query_day']   = time.strftime("%Y-%m-%d")
-        data['min_salary']  = 0.0
-        data['max_salary']  = 0.0
-        data['final_exp']   = 0
+            # Initialize columns
+            data['source']      = 'itviec'
+            data['query_day']   = time.strftime("%Y-%m-%d")
+            data['min_salary']  = 0.0
+            data['max_salary']  = 0.0
+            data['final_exp']   = 0
 
-        # delete column salary
-        data = data.drop('salary', axis=1)
+            # delete column salary
+            data = data.drop('salary', axis=1)
 
-        insert_to_mysql(conn, cur, data)
-        insert_to_kafka(producer, data)
+            insert_to_mysql(conn, cur, data)
+            insert_to_kafka(producer, data)
+
+
+    except Exception as e:
+        print(f"[ERROR] Something went wrong: {e}")
 
     driver.quit()
     return
@@ -630,10 +658,11 @@ def scrape_data():
         print("Cache dir:", os.environ.get('UCD_CHROMEDRIVER_CACHE_DIR'))
 
         get_job_from_top_cv(conn, cur, producer)
-        # get_job_from_career_link(conn, cur, producer)
-        # get_job_from_career_viet(conn, cur, producer)
-        # get_job_from_it_viec(conn, cur, producer)
-        # get_job_from_vietnam_works(conn, cur, 1)
+        get_job_from_career_link(conn, cur, producer)
+        get_job_from_career_viet(conn, cur, producer)
+        get_job_from_it_viec(conn, cur, producer)
+        get_job_from_vietnam_works(conn, cur, producer)
 
     except Exception as e:
-        print(e)
+        print(f"[ERROR] Something went wrong: {e}")
+        return

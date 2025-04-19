@@ -35,6 +35,7 @@ def process_data():
             .option("kafka.bootstrap.servers", "broker:29092")
             .option("subscribe", "jobs-topic")
             .option("startingOffsets", "earliest")
+            .option("failOnDataLoss", "false")
             .load()
             .selectExpr("CAST(value AS STRING)")
             .select(from_json(col("value"), job_schema).alias("data"))
@@ -150,7 +151,7 @@ def process_data():
         )
 
         # Write aggregated data to Kafka topics
-        expreport_to_kafka = (
+        exp_report_to_kafka = (
             exp_report_json
             .writeStream
             .format("kafka")
@@ -165,7 +166,7 @@ def process_data():
         # Await termination for the streaming queries
         address_report_to_kafka.awaitTermination()
         source_report_to_kafka.awaitTermination()
-        expreport_to_kafka.awaitTermination()
+        exp_report_to_kafka.awaitTermination()
 
     except Exception as e:
         print(e)
