@@ -1,21 +1,20 @@
 JOB MARKET ETL
 ===============================
 
+## I. Introduction
 I implemented a pipeline to scrape, process, and analyze the job market by each job's address, location and exp.
+
+## II. System Components
+
 ![image](https://github.com/user-attachments/assets/b40bca06-6252-470f-9cdc-6e7398b9322c)
-## System Components
-- **create_table.py**: create required tables in mysql and postgres for further workflow
+
+- **initial_requirements.py**: create required tables in mysql and postgres and kafka topics for further workflow
 - **scrape_data**: scrape jobs from website using Selenium and clean these data using Pandas, then save cleaned data to mysql and produce to kafka topic 'jobs-topic'
 - **process_data**: consume data from topic 'jobs-topic, process these data using spark, then produce to new kafka topics ('address_report', 'location_report', 'exp_report')
 - **visualize_report**: Consumes reports from Kafka topics (address_report, location_report, exp_report) and stores them in PostgreSQL for Superset dashboard visualization.
 - **send_email**: Fetch data from PostgreSQL and send email to user
 
-## Prerequisites
-- Python 3.9 or above installed on your machine
-- Docker Compose installed on your machine
-- Docker installed on your machine
-
-## Steps to Run
+## III. Steps to Run
 ### 1. Clone this repository.
 
 ### 2. Config Requirements and Dockerfile
@@ -28,61 +27,51 @@ docker build -t airflow-webscraping .
 ```bash
 docker-compose up -d
 ```
-This command will start Zookeeper, Kafka, Airflow and Postgres containers in detached mode (`-d` flag). 
-Kafka will be accessible at `localhost:9092`, Postgres at `localhost:5432`, Superset at `localhost:8088` and Airflow at `localhost:8080`
 
 ### 3. Config Superset Docker:
-#### Enter the repository you just cloned
+#### Enter the Superset repository
 ```bash
 cd superset
-```
-
-#### Set the repo to the state associated with the latest official version
-```bash
-git checkout tags/4.1.2
 ```
 
 #### Fire up Superset using Docker Compose
 ```bash
 docker compose -f docker-compose-image-tag.yml up
 ```
-
-#### Additional Configuration
-If you need to modify configurations or change the exposed port, you can update the `docker-compose.yml` file according to your requirements.
-
-## Running the App
-### 1. Install the required Python packages using the following command:
+### 4. Install the required Python packages using the following command:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Creating required tables on MySQL and Postgres:
-```bash
-python create_table.py
-```
+### Additional Configuration
+If you need to modify configurations or change the exposed port, you can update the `docker-compose.yml` file according to your requirements.
 
-### 3. Srcape and clean data, save to mysql and produce to kafka:
-```bash
-python scrape_data.py
-```
+## IV. Running the App
+### Airflow
+- Open http://localhost:8080 in your browser.
+- User/password: airflow / airflow.
+- Run dag_for_jobs_market_etl
+  
+![image](https://github.com/user-attachments/assets/af3ce9b7-e0f7-45b1-a7b7-da3fea78406d)
 
-### 4. Consume data from kafka and process, then produce to new kafka topic:
-```bash
-python process_data.py
-```
+### MySQL
 
-### 5. Consume data and save to postgresql for superset visualization
-```bash
-python visualize_report.py
-```
+![image](https://github.com/user-attachments/assets/7d2f844b-6aec-4c59-855b-ff9a57926155)
 
-### 6. Fetch data again from PostgreSQL to send email to user:
-```bash
-python send_email.py
-```
+### Form Email
+- After Airflow is done (about 30 minutes), receive email about total jobs and top highest salary jobs
+  
+![image](https://github.com/user-attachments/assets/8d287130-ef5e-4f6d-95fe-c44ce394b992)
 
-## Demo
+### Superset
+- Open http://localhost:8088 in your browser.
+- User / password: admin / admin.
 
+![image](https://github.com/user-attachments/assets/f707027e-aea8-429c-8ef5-adc7036bd90d)
+
+![image](https://github.com/user-attachments/assets/ab19eef3-a9ec-4290-b845-c0793b457b3e)
+
+![image](https://github.com/user-attachments/assets/82d840e4-fdb9-462e-ab48-e610d78364e1)
 
 
 
