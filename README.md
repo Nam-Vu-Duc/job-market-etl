@@ -38,10 +38,6 @@ cd superset
 ```bash
 docker compose -f docker-compose-image-tag.yml up
 ```
-### 4. Install the required Python packages using the following command:
-```bash
-pip install -r requirements.txt
-```
 
 ### Additional Configuration
 If you need to modify configurations or change the exposed port, you can update the `docker-compose.yml` file according to your requirements.
@@ -58,7 +54,7 @@ If you need to modify configurations or change the exposed port, you can update 
 
 ![image](https://github.com/user-attachments/assets/7d2f844b-6aec-4c59-855b-ff9a57926155)
 
-### Form Email
+### Email
 - After Airflow is done (about 30 minutes), receive email about total jobs and top highest salary jobs
   
 ![image](https://github.com/user-attachments/assets/8d287130-ef5e-4f6d-95fe-c44ce394b992)
