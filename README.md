@@ -51,8 +51,8 @@ If you need to modify configurations or change the exposed port, you can update 
 - Open http://localhost:8080 in your browser.
 - User/password: airflow / airflow.
 - Run dag_for_jobs_market_etl
-  
-![image](https://github.com/user-attachments/assets/af3ce9b7-e0f7-45b1-a7b7-da3fea78406d)
+
+![image](https://github.com/user-attachments/assets/e83da1da-c4ff-488f-8b11-63806cccaa44)
 
 ### MySQL
 
