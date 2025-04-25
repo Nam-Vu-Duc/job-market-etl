@@ -16,7 +16,6 @@ with DAG(
     dag_id='test_process_data',
     description='send_#2',
     start_date=datetime(2025, 4, 16),
-    # schedule_interval='@daily'
 ) as dag:
     process_data = PythonOperator(
         task_id='process_data',

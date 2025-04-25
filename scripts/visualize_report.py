@@ -4,8 +4,8 @@ import json
 from confluent_kafka import Consumer, SerializingProducer, KafkaError
 
 def store_address_data_to_postgres(address_data, cur, conn):
-    print('Start storing address data to postgres')
     try:
+        print('Start storing address data to postgres')
         # insert to address_report table
         cur.execute(
             """
@@ -31,8 +31,8 @@ def store_address_data_to_postgres(address_data, cur, conn):
         print(e)
 
 def store_source_data_to_postgres(source_data, cur, conn):
-    print('Start storing source data to postgres')
     try:
+        print('Start storing source data to postgres')
         # insert to source_report table
         cur.execute(
             """
@@ -58,8 +58,8 @@ def store_source_data_to_postgres(source_data, cur, conn):
         print(e)
 
 def store_exp_data_to_postgres(exp_data, cur, conn):
-    print('Start storing exp data to postgres')
     try:
+        print('Start storing exp data to postgres')
         # insert to exp_report table
         cur.execute(
             """

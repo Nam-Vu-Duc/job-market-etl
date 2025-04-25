@@ -5,7 +5,6 @@ from pyspark.sql.functions import min as _min, max as _max, avg, from_json, coun
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DateType, FloatType
 
 def process_data():
-    print("JAVA_HOME:", os.environ.get("JAVA_HOME"))
     try:
         # Initialize SparkSession
         spark = (SparkSession.builder

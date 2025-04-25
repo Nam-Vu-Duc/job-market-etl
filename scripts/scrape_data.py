@@ -646,16 +646,14 @@ def get_job_from_vietnam_works(conn, cur, producer) -> None:
     return
 
 def scrape_data():
-    producer = SerializingProducer({'bootstrap.servers': 'broker:29092'})
     try:
+        producer = SerializingProducer({'bootstrap.servers': 'broker:29092'})
         conn = mysql.connector.connect(
             host="host.docker.internal",
             user="root",
             password="root"
         )
         cur = conn.cursor()
-
-        print("Cache dir:", os.environ.get('UCD_CHROMEDRIVER_CACHE_DIR'))
 
         get_job_from_top_cv(conn, cur, producer)
         get_job_from_career_link(conn, cur, producer)
@@ -664,5 +662,4 @@ def scrape_data():
         get_job_from_vietnam_works(conn, cur, producer)
 
     except Exception as e:
-        print(f"[ERROR] Something went wrong: {e}")
-        return
+        print(e)

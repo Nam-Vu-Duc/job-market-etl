@@ -1,5 +1,7 @@
 .log/
 .venv/
 logs/
-.idea/
 .env
+*.iws
+.idea/workspace.xml
+.idea/tasks.xml

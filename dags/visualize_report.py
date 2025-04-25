@@ -16,7 +16,6 @@ with DAG(
     dag_id='test_fetch_from_kafka_and_store_to_postgres',
     description='send_#2',
     start_date=datetime(2025, 4, 16),
-    # schedule_interval='@daily'
 ) as dag:
     fetch_from_kafka_and_store_to_postgres = PythonOperator(
         task_id='fetch_from_kafka_and_store_to_postgres',

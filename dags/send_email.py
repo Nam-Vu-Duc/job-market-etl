@@ -16,7 +16,6 @@ with DAG(
     dag_id='test_send_email',
     description='send_#2',
     start_date=datetime(2025, 4, 16),
-    # schedule_interval='@daily'
 ) as dag:
     send_email = PythonOperator(
         task_id='send_email',
