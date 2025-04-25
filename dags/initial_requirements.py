@@ -16,7 +16,6 @@ with DAG(
     dag_id='test_initial_requirements',
     description='send_#2',
     start_date=datetime(2025, 4, 16),
-    # schedule_interval='@daily'
 ) as dag:
     create_table = PythonOperator(
         task_id='initial_requirements',

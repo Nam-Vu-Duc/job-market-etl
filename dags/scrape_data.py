@@ -16,7 +16,6 @@ with DAG(
     dag_id='test_scrape_data',
     description='send_#2',
     start_date=datetime(2025, 4, 16),
-    # schedule_interval='@daily'
 ) as dag:
     scrape_data = PythonOperator(
         task_id='scrape_data',

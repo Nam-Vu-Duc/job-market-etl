@@ -15,13 +15,13 @@ default_args = {
     'retry_delay': timedelta(minutes=30)
 }
 
-with DAG(
+with (DAG(
     default_args=default_args,
     dag_id='dag_for_jobs_market_etl',
-    description='send_#2',
+    description='dag_for_jobs_market_etl',
     start_date=datetime(2025, 4, 16),
     # schedule_interval='@daily'
-) as dag:
+) as dag):
     initial_requirements = PythonOperator(
         task_id='initial_requirements',
         python_callable=initial_requirements,
@@ -47,4 +47,5 @@ with DAG(
         python_callable=send_email
     )
 
-    initial_requirements >> scrape_data >> visualize_report >> send_email
+    initial_requirements >> scrape_data >> [process_data, visualize_report]
+    visualize_report >> send_email
