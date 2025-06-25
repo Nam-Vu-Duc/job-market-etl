@@ -6,13 +6,13 @@ I implemented a pipeline to scrape, process, and analyze the job market by each 
 
 ## II. System Components
 
-![image](https://github.com/user-attachments/assets/b40bca06-6252-470f-9cdc-6e7398b9322c)
+![image](https://github.com/user-attachments/assets/08cf6286-658f-46bb-a76e-eeb0e2d0f81a)
 
 - **initial_requirements.py**: create required tables in mysql and postgres and kafka topics for further workflow
 - **scrape_data**: scrape jobs from website using Selenium and clean these data using Pandas, then save cleaned data to mysql and produce to kafka topic 'jobs-topic'
-- **process_data**: consume data from topic 'jobs-topic, process these data using spark, then produce to new kafka topics ('address_report', 'location_report', 'exp_report')
-- **visualize_report**: Consumes reports from Kafka topics (address_report, location_report, exp_report) and stores them in PostgreSQL for Superset dashboard visualization.
-- **send_email**: Fetch data from PostgreSQL and send email to user
+- **process_data**: consume data from topic 'jobs-topic, process these data using spark, then store data in Postgres 
+- **visualize_report**: Fetch data from PostgreSQL for Superset dashboard visualization.
+- **send_email**: Fetch data from MySQL for sending email to user
 
 ## III. Steps to Run
 ### 1. Clone this repository.
