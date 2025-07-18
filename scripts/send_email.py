@@ -44,8 +44,7 @@ def fetch_from_mysql():
 def send_email():
     try:
         sender = 'vuducnama6@gmail.com'
-        # password = os.getenv('APP_PASSWORD')
-        password = 'cnxsnrschvmoaghb'
+        password = os.getenv('APP_PASSWORD')
         receiver = 'namvd.dev@gmail.com'
         subject = 'Job Market Report'
         total_jobs, top_10_jobs = fetch_from_mysql()
